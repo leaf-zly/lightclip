@@ -1,0 +1,75 @@
+{
+  "name": "lightclip-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A lightweight and polished Windows clipboard history app.",
+  "author": "qiang.tan",
+  "homepage": "https://github.com/1249190004/lightclip#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1249190004/lightclip.git"
+  },
+  "main": "dist/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 4287",
+    "dev:main": "wait-on tcp:4287 && tsc -p tsconfig.main.json && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:4287 electron .",
+    "build": "pnpm typecheck && vite build && tsc -p tsconfig.main.json",
+    "dist": "pnpm build && electron-builder --win nsis portable",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json",
+    "preview": "pnpm build && electron ."
+  },
+  "build": {
+    "appId": "dev.lightclip.app",
+    "productName": "LightClip",
+    "electronDist": "node_modules/electron/dist",
+    "toolsets": {
+      "nsis": "0.0.0"
+    },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
+    "win": {
+      "icon": "resources/lightclip-icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LightClip"
+    }
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.0.0",
+    "vue": "^3.5.25"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7",
+    "vue-tsc": "^3.1.8",
+    "wait-on": "^9.0.3"
+  }
+}
