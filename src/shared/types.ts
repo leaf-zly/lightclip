@@ -1,5 +1,10 @@
 export type ClipboardItemKind = 'text' | 'image' | 'file'
 
+/**
+ * Accent palettes supported by LightClip's renderer theme system.
+ */
+export type AppThemeAccent = 'mint' | 'blue' | 'violet' | 'rose' | 'amber'
+
 interface ClipboardItemBase {
   /** Stable generated identifier used by renderer operations. */
   id: string
@@ -77,6 +82,8 @@ export interface AppSettings {
   maxFilePaths: number
   /** Global shortcut used to show or hide the quick panel. */
   globalShortcut: string
+  /** Accent color palette used by the window chrome and interactive states. */
+  themeAccent: AppThemeAccent
 }
 
 /**
@@ -114,7 +121,6 @@ export const IPC_CHANNELS = {
   minimizeWindow: 'lightclip:minimize-window',
   toggleMaximizeWindow: 'lightclip:toggle-maximize-window',
   closeWindow: 'lightclip:close-window',
-  showMenu: 'lightclip:show-menu',
   showPanel: 'lightclip:show-panel',
   hidePanel: 'lightclip:hide-panel',
   quit: 'lightclip:quit',
@@ -143,8 +149,6 @@ export interface LightClipApi {
   toggleMaximizeWindow: () => Promise<void>
   /** Closes the quick panel to the tray. */
   closeWindow: () => Promise<void>
-  /** Opens the native menu at the current cursor location. */
-  showMenu: (menu: 'file' | 'edit' | 'view' | 'window') => Promise<void>
   /** Hides the quick panel window. */
   hidePanel: () => Promise<void>
   /** Quits the background app process. */

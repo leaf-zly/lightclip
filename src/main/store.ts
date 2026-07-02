@@ -1,9 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
-import type { AppSettings, AppState, ClipboardItem, FileClipboardItem, ImageClipboardItem } from '../shared/types.js'
+import type { AppSettings, AppState, AppThemeAccent, ClipboardItem, FileClipboardItem, ImageClipboardItem } from '../shared/types.js'
 
 const STORE_VERSION = 1
+const themeAccents: readonly AppThemeAccent[] = ['mint', 'blue', 'violet', 'rose', 'amber']
 
 interface PersistedStore {
   version: number
@@ -22,6 +23,7 @@ const defaultSettings: AppSettings = {
   maxImageBytes: 5 * 1024 * 1024,
   maxFilePaths: 20,
   globalShortcut: 'Alt+V',
+  themeAccent: 'mint',
 }
 
 /**
@@ -53,7 +55,7 @@ export class ClipboardStore {
       const parsed = JSON.parse(raw) as Partial<PersistedStore>
       this.state = {
         version: STORE_VERSION,
-        settings: { ...defaultSettings, ...parsed.settings },
+        settings: normalizeSettings({ ...defaultSettings, ...parsed.settings }),
         items: Array.isArray(parsed.items) ? parsed.items.map(normalizeClipboardItem).filter(isClipboardItem) : [],
       }
       this.trimOverflow()
@@ -312,7 +314,14 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     maxImageBytes: clampInteger(settings.maxImageBytes, 128 * 1024, 100 * 1024 * 1024),
     maxFilePaths: clampInteger(settings.maxFilePaths, 1, 200),
     globalShortcut: settings.globalShortcut.trim() || defaultSettings.globalShortcut,
+    themeAccent: normalizeThemeAccent(settings.themeAccent),
   }
+}
+
+function normalizeThemeAccent(value: unknown): AppThemeAccent {
+  return typeof value === 'string' && themeAccents.includes(value as AppThemeAccent)
+    ? (value as AppThemeAccent)
+    : defaultSettings.themeAccent
 }
 
 function clampInteger(value: number, min: number, max: number): number {

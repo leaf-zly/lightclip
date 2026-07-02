@@ -11,7 +11,6 @@ const api: LightClipApi = {
   minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.minimizeWindow),
   toggleMaximizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.toggleMaximizeWindow),
   closeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.closeWindow),
-  showMenu: (menu) => ipcRenderer.invoke(IPC_CHANNELS.showMenu, menu),
   hidePanel: () => ipcRenderer.invoke(IPC_CHANNELS.hidePanel),
   quit: () => ipcRenderer.invoke(IPC_CHANNELS.quit),
   onStateChanged: (callback) => {

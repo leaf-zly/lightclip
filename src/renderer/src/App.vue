@@ -20,8 +20,28 @@ import {
 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
-import type { AppSettings, AppState, ClipboardItem } from '../../shared/types'
+import type { AppSettings, AppState, AppThemeAccent, ClipboardItem } from '../../shared/types'
 import { createItemTitle, describeItem, formatRelativeTime, matchesQuery } from './utils'
+
+/**
+ * Theme accent metadata used to render the compact palette picker.
+ */
+interface ThemeAccentOption {
+  /** Persisted accent identifier shared with the main process settings store. */
+  id: AppThemeAccent
+  /** Human-readable color name for accessibility and the current selection text. */
+  label: string
+  /** Primary swatch color shown in the settings panel. */
+  color: string
+}
+
+const themeAccents: readonly ThemeAccentOption[] = [
+  { id: 'mint', label: '薄荷绿', color: '#20b486' },
+  { id: 'blue', label: '湖蓝', color: '#3278d7' },
+  { id: 'violet', label: '紫罗兰', color: '#7c5cff' },
+  { id: 'rose', label: '玫瑰红', color: '#d94b78' },
+  { id: 'amber', label: '琥珀黄', color: '#c9861f' },
+]
 
 const state = ref<AppState>({
   items: [],
@@ -36,6 +56,7 @@ const state = ref<AppState>({
     maxImageBytes: 5 * 1024 * 1024,
     maxFilePaths: 20,
     globalShortcut: 'Alt+V',
+    themeAccent: 'mint',
   },
 })
 const query = ref('')
@@ -54,12 +75,10 @@ const selectedItem = computed(() => filteredItems.value[selectedIndex.value] ?? 
 const pinnedCount = computed(() => state.value.items.filter((item) => item.pinned).length)
 const regularCount = computed(() => state.value.items.length - pinnedCount.value)
 const captureStatus = computed(() => (state.value.settings.captureEnabled ? '正在记录' : '已暂停'))
-const menus = [
-  { id: 'file', label: '文件' },
-  { id: 'edit', label: '编辑' },
-  { id: 'view', label: '视图' },
-  { id: 'window', label: '窗口' },
-] as const
+const currentThemeLabel = computed(
+  () => themeAccents.find((accent) => accent.id === state.value.settings.themeAccent)?.label ?? themeAccents[0].label,
+)
+const shellClass = computed(() => `theme-${state.value.settings.themeAccent}`)
 
 /**
  * Loads initial app state and wires main-process updates into Vue state.
@@ -130,10 +149,6 @@ async function quitApp(): Promise<void> {
   await window.lightClip.quit()
 }
 
-async function showMenu(menu: (typeof menus)[number]['id']): Promise<void> {
-  await window.lightClip.showMenu(menu)
-}
-
 async function minimizeWindow(): Promise<void> {
   await window.lightClip.minimizeWindow()
 }
@@ -201,17 +216,12 @@ function handleKeyboard(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <main class="shell" @keydown="handleKeyboard">
+  <main class="shell" :class="shellClass" @keydown="handleKeyboard">
     <header class="window-frame">
       <div class="window-title">
         <img class="window-icon" :src="appIconUrl" alt="" />
         <span>LightClip</span>
       </div>
-      <nav class="window-menu" aria-label="应用菜单">
-        <button v-for="menu in menus" :key="menu.id" type="button" @click="showMenu(menu.id)">
-          {{ menu.label }}
-        </button>
-      </nav>
       <div class="window-controls">
         <button type="button" title="最小化" @click="minimizeWindow">
           <Minus :size="14" />
@@ -270,6 +280,28 @@ function handleKeyboard(event: KeyboardEvent): void {
       </div>
 
       <section v-if="showSettings" class="settings-pane" aria-label="设置">
+        <div class="setting-row theme-setting">
+          <div>
+            <strong>主题色</strong>
+            <span>{{ currentThemeLabel }}</span>
+          </div>
+          <div class="theme-swatches" role="radiogroup" aria-label="主题色">
+            <button
+              v-for="accent in themeAccents"
+              :key="accent.id"
+              class="theme-swatch"
+              :class="{ selected: state.settings.themeAccent === accent.id }"
+              :style="{ '--swatch-color': accent.color }"
+              type="button"
+              role="radio"
+              :aria-checked="state.settings.themeAccent === accent.id"
+              :aria-label="accent.label"
+              :title="accent.label"
+              @click="updateSettings({ themeAccent: accent.id })"
+            ></button>
+          </div>
+        </div>
+
         <div class="setting-row">
           <div>
             <strong>开机自启</strong>

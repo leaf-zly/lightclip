@@ -47,6 +47,7 @@ interface ClipboardSnapshot {
 async function bootstrap(): Promise<void> {
   await store.load()
   applyLaunchAtLogin(store.getState().settings.launchAtLogin)
+  Menu.setApplicationMenu(null)
   createTray()
   createWindow()
   registerGlobalShortcut(store.getState().settings.globalShortcut)
@@ -226,58 +227,6 @@ function updateTrayMenu(): void {
   tray.setContextMenu(menu)
 }
 
-function createApplicationMenuTemplate(): Record<string, Electron.MenuItemConstructorOptions[]> {
-  return {
-    file: [
-      { label: '打开 LightClip', click: showPanel },
-      { label: '隐藏到托盘', click: hidePanel },
-      { type: 'separator' },
-      {
-        label: '退出',
-        click: () => {
-          isQuitting = true
-          app.quit()
-        },
-      },
-    ],
-    edit: [
-      { role: 'undo', label: '撤销' },
-      { role: 'redo', label: '重做' },
-      { type: 'separator' },
-      { role: 'cut', label: '剪切' },
-      { role: 'copy', label: '复制' },
-      { role: 'paste', label: '粘贴' },
-      { role: 'delete', label: '删除' },
-      { type: 'separator' },
-      { role: 'selectAll', label: '全选' },
-    ],
-    view: [
-      { role: 'reload', label: '重新加载' },
-      { role: 'forceReload', label: '强制重新加载' },
-      { role: 'toggleDevTools', label: '开发者工具' },
-      { type: 'separator' },
-      { role: 'resetZoom', label: '重置缩放' },
-      { role: 'zoomIn', label: '放大' },
-      { role: 'zoomOut', label: '缩小' },
-      { type: 'separator' },
-      { role: 'togglefullscreen', label: '全屏' },
-    ],
-    window: [
-      { role: 'minimize', label: '最小化' },
-      { label: '最大化/还原', click: toggleMaximizeWindow },
-      { label: '关闭到托盘', click: hidePanel },
-    ],
-  }
-}
-
-function showNativeMenu(menuName: keyof ReturnType<typeof createApplicationMenuTemplate>): void {
-  const template = createApplicationMenuTemplate()[menuName]
-  if (!template || !mainWindow) {
-    return
-  }
-
-  Menu.buildFromTemplate(template).popup({ window: mainWindow })
-}
 
 /**
  * Registers or replaces the global shortcut used to toggle the quick panel.
@@ -616,7 +565,6 @@ ipcMain.handle(IPC_CHANNELS.showPanel, () => showPanel())
 ipcMain.handle(IPC_CHANNELS.minimizeWindow, () => minimizeWindow())
 ipcMain.handle(IPC_CHANNELS.toggleMaximizeWindow, () => toggleMaximizeWindow())
 ipcMain.handle(IPC_CHANNELS.closeWindow, () => hidePanel())
-ipcMain.handle(IPC_CHANNELS.showMenu, (_event, menuName: 'file' | 'edit' | 'view' | 'window') => showNativeMenu(menuName))
 ipcMain.handle(IPC_CHANNELS.hidePanel, () => hidePanel())
 ipcMain.handle(IPC_CHANNELS.quit, () => {
   isQuitting = true
