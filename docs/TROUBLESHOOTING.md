@@ -17,6 +17,32 @@ pnpm preview
 
 Packaged builds rely on relative renderer assets. If the issue appears only in installer or portable builds, include the exact asset name in the bug report.
 
+## Build Reports Garbled TypeScript
+
+If `pnpm build` or `pnpm dist` reports syntax errors in `src/shared/types.ts` or `src/renderer/src/utils.ts` with unreadable characters, the source file is corrupted on disk. This is not caused by Windows PowerShell versus PowerShell 7.
+
+Run:
+
+```powershell
+pnpm check:sources
+git status --short
+git restore src/shared/types.ts src/renderer/src/utils.ts
+pnpm build
+```
+
+`pnpm build` and `pnpm dist` run the same source integrity check before TypeScript compilation, so corrupted source files should fail with a focused diagnostic before compiler parser errors appear.
+
+## Dist Cannot Replace Win-Unpacked Files
+
+If `pnpm dist` fails with `EBUSY` while removing files under `release\win-unpacked`, an older packaged LightClip process is still running from that directory.
+
+Close LightClip from the tray, or run:
+
+```powershell
+Get-Process LightClip,electron -ErrorAction SilentlyContinue | Stop-Process -Force
+pnpm dist
+```
+
 ## Shortcut Does Not Open LightClip
 
 Check:
