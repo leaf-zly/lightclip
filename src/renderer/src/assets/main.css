@@ -371,6 +371,7 @@ h1 {
 
 .settings-pane {
   display: grid;
+  min-height: 0;
   gap: 14px;
   max-height: min(360px, 42vh);
   overflow-y: auto;
@@ -379,6 +380,12 @@ h1 {
   background: var(--surface-raised);
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
   border-radius: 8px;
+}
+
+.settings-pane-expanded {
+  flex: 1 1 auto;
+  align-content: start;
+  max-height: none;
 }
 
 .settings-pane::-webkit-scrollbar {
@@ -884,6 +891,10 @@ kbd {
 
   .settings-pane {
     max-height: min(320px, 40vh);
+  }
+
+  .settings-pane-expanded {
+    max-height: none;
   }
 
   .setting-row {

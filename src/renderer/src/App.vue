@@ -474,7 +474,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         </div>
       </header>
 
-      <div class="search-row">
+      <div v-if="!showSettings" class="search-row">
         <Search :size="20" />
         <input
           ref="searchInput"
@@ -489,7 +489,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         </button>
       </div>
 
-      <div class="filter-row" aria-label="历史筛选">
+      <div v-if="!showSettings" class="filter-row" aria-label="历史筛选">
         <ListFilter :size="17" />
         <div class="filter-tabs" role="tablist">
           <button
@@ -508,7 +508,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         </div>
       </div>
 
-      <section v-if="showSettings" class="settings-pane" aria-label="设置">
+      <section v-if="showSettings" class="settings-pane settings-pane-expanded" aria-label="设置">
         <div class="setting-row mode-setting">
           <div>
             <strong>外观</strong>
@@ -685,104 +685,106 @@ function handleKeyboard(event: KeyboardEvent): void {
         </div>
       </section>
 
-      <div class="list-toolbar">
-        <span>{{ filteredItems.length }} 条匹配 · {{ activeFilterLabel }}</span>
-        <div class="toolbar-actions">
-          <button
-            class="text-button"
-            type="button"
-            :disabled="!(activeFilter === 'text' || activeFilter === 'image' || activeFilter === 'file')"
-            @click="clearActiveType"
-          >
-            <Eraser :size="16" />
-            清理当前类型
-          </button>
-          <button class="text-button" type="button" :disabled="regularCount === 0" @click="clearHistory">
-            <Trash2 :size="16" />
-            清空未固定
-          </button>
+      <template v-else>
+        <div class="list-toolbar">
+          <span>{{ filteredItems.length }} 条匹配 · {{ activeFilterLabel }}</span>
+          <div class="toolbar-actions">
+            <button
+              class="text-button"
+              type="button"
+              :disabled="!(activeFilter === 'text' || activeFilter === 'image' || activeFilter === 'file')"
+              @click="clearActiveType"
+            >
+              <Eraser :size="16" />
+              清理当前类型
+            </button>
+            <button class="text-button" type="button" :disabled="regularCount === 0" @click="clearHistory">
+              <Trash2 :size="16" />
+              清空未固定
+            </button>
+          </div>
         </div>
-      </div>
 
-      <section v-if="filteredItems.length" class="history-list" aria-label="剪贴板历史">
-        <article
-          v-for="(item, index) in filteredItems"
-          :key="item.id"
-          class="history-item"
-          :class="[`history-item-${item.kind}`, { selected: selectedIndex === index, pinned: item.pinned }]"
-          @mouseenter="selectedIndex = index"
-          @dblclick="copyItem(item)"
-        >
-          <button class="item-main" type="button" @click="copyItem(item)">
-            <span v-if="item.kind === 'image'" class="image-item-layout">
-              <span class="item-kind" :class="`kind-${item.kind}`">
-                <Image :size="17" />
+        <section v-if="filteredItems.length" class="history-list" aria-label="剪贴板历史">
+          <article
+            v-for="(item, index) in filteredItems"
+            :key="item.id"
+            class="history-item"
+            :class="[`history-item-${item.kind}`, { selected: selectedIndex === index, pinned: item.pinned }]"
+            @mouseenter="selectedIndex = index"
+            @dblclick="copyItem(item)"
+          >
+            <button class="item-main" type="button" @click="copyItem(item)">
+              <span v-if="item.kind === 'image'" class="image-item-layout">
+                <span class="item-kind" :class="`kind-${item.kind}`">
+                  <Image :size="17" />
+                </span>
+                <span class="image-preview-frame">
+                  <img class="image-preview" :src="item.dataUrl" alt="" />
+                </span>
+                <span class="image-item-copy">
+                  <span class="item-preview">{{ createItemTitle(item) }}</span>
+                  <span class="item-meta">
+                    {{ describeItem(item) }} · {{ formatRelativeTime(item.updatedAt, now) }}
+                    <template v-if="item.copyCount"> · 已用 {{ item.copyCount }} 次</template>
+                  </span>
+                </span>
               </span>
-              <span class="image-preview-frame">
-                <img class="image-preview" :src="item.dataUrl" alt="" />
-              </span>
-              <span class="image-item-copy">
-                <span class="item-preview">{{ createItemTitle(item) }}</span>
+
+              <template v-else>
+                <span class="item-content">
+                  <span class="item-kind" :class="`kind-${item.kind}`">
+                    <FileStack v-if="item.kind === 'file'" :size="17" />
+                    <Copy v-else :size="17" />
+                  </span>
+                  <span class="item-body">
+                    <span class="item-preview">{{ createItemTitle(item) }}</span>
+                  </span>
+                </span>
                 <span class="item-meta">
                   {{ describeItem(item) }} · {{ formatRelativeTime(item.updatedAt, now) }}
                   <template v-if="item.copyCount"> · 已用 {{ item.copyCount }} 次</template>
                 </span>
-              </span>
-            </span>
+              </template>
+            </button>
 
-            <template v-else>
-              <span class="item-content">
-                <span class="item-kind" :class="`kind-${item.kind}`">
-                  <FileStack v-if="item.kind === 'file'" :size="17" />
-                  <Copy v-else :size="17" />
-                </span>
-                <span class="item-body">
-                  <span class="item-preview">{{ createItemTitle(item) }}</span>
-                </span>
-              </span>
-              <span class="item-meta">
-                {{ describeItem(item) }} · {{ formatRelativeTime(item.updatedAt, now) }}
-                <template v-if="item.copyCount"> · 已用 {{ item.copyCount }} 次</template>
-              </span>
-            </template>
-          </button>
+            <div class="item-actions">
+              <button class="icon-button small" type="button" title="预览" @click.stop="openPreview(item)">
+                <Eye :size="16" />
+              </button>
+              <button
+                class="icon-button small"
+                type="button"
+                :title="item.pinned ? '取消固定' : '固定'"
+                @click.stop="togglePin(item)"
+              >
+                <PinOff v-if="item.pinned" :size="16" />
+                <Pin v-else :size="16" />
+              </button>
+              <button class="icon-button small" type="button" title="复制" @click.stop="copyItem(item)">
+                <Copy :size="16" />
+              </button>
+              <button class="icon-button small danger" type="button" title="删除" @click.stop="deleteItem(item)">
+                <Trash2 :size="16" />
+              </button>
+            </div>
+          </article>
+        </section>
 
-          <div class="item-actions">
-            <button class="icon-button small" type="button" title="预览" @click.stop="openPreview(item)">
-              <Eye :size="16" />
-            </button>
-            <button
-              class="icon-button small"
-              type="button"
-              :title="item.pinned ? '取消固定' : '固定'"
-              @click.stop="togglePin(item)"
-            >
-              <PinOff v-if="item.pinned" :size="16" />
-              <Pin v-else :size="16" />
-            </button>
-            <button class="icon-button small" type="button" title="复制" @click.stop="copyItem(item)">
-              <Copy :size="16" />
-            </button>
-            <button class="icon-button small danger" type="button" title="删除" @click.stop="deleteItem(item)">
-              <Trash2 :size="16" />
-            </button>
+        <section v-else class="empty-state">
+          <div class="empty-icon">
+            <ChevronDown :size="28" />
           </div>
-        </article>
-      </section>
+          <h2>{{ query ? '没有匹配结果' : '复制一点内容试试' }}</h2>
+          <p>{{ query ? '换个关键词，或者切换筛选。' : 'LightClip 会在后台保存文本剪贴板历史。' }}</p>
+        </section>
 
-      <section v-else class="empty-state">
-        <div class="empty-icon">
-          <ChevronDown :size="28" />
-        </div>
-        <h2>{{ query ? '没有匹配结果' : '复制一点内容试试' }}</h2>
-        <p>{{ query ? '换个关键词，或者切换筛选。' : 'LightClip 会在后台保存文本剪贴板历史。' }}</p>
-      </section>
-
-      <footer class="footer">
-        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
-        <span><kbd>Enter</kbd> 复制</span>
-        <span><kbd>Esc</kbd> 隐藏</span>
-      </footer>
+        <footer class="footer">
+          <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+          <span><kbd>Enter</kbd> 复制</span>
+          <span><kbd>Esc</kbd> 隐藏</span>
+        </footer>
+      </template>
     </section>
 
     <transition name="modal">
