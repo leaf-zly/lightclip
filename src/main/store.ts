@@ -1,10 +1,19 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
-import type { AppSettings, AppState, AppThemeAccent, ClipboardItem, FileClipboardItem, ImageClipboardItem } from '../shared/types.js'
+import type {
+  AppSettings,
+  AppState,
+  AppThemeAccent,
+  AppThemeMode,
+  ClipboardItem,
+  FileClipboardItem,
+  ImageClipboardItem,
+} from '../shared/types.js'
 
 const STORE_VERSION = 1
 const themeAccents: readonly AppThemeAccent[] = ['mint', 'blue', 'violet', 'rose', 'amber']
+const themeModes: readonly AppThemeMode[] = ['system', 'light', 'dark']
 
 interface PersistedStore {
   version: number
@@ -24,6 +33,7 @@ const defaultSettings: AppSettings = {
   maxFilePaths: 20,
   globalShortcut: 'Alt+V',
   themeAccent: 'mint',
+  themeMode: 'system',
 }
 
 /**
@@ -315,6 +325,7 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     maxFilePaths: clampInteger(settings.maxFilePaths, 1, 200),
     globalShortcut: settings.globalShortcut.trim() || defaultSettings.globalShortcut,
     themeAccent: normalizeThemeAccent(settings.themeAccent),
+    themeMode: normalizeThemeMode(settings.themeMode),
   }
 }
 
@@ -322,6 +333,12 @@ function normalizeThemeAccent(value: unknown): AppThemeAccent {
   return typeof value === 'string' && themeAccents.includes(value as AppThemeAccent)
     ? (value as AppThemeAccent)
     : defaultSettings.themeAccent
+}
+
+function normalizeThemeMode(value: unknown): AppThemeMode {
+  return typeof value === 'string' && themeModes.includes(value as AppThemeMode)
+    ? (value as AppThemeMode)
+    : defaultSettings.themeMode
 }
 
 function clampInteger(value: number, min: number, max: number): number {

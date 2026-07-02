@@ -69,13 +69,14 @@ New privileged behavior should be added to `src/shared/types.ts`, implemented in
 
 ## UI Theming
 
-Theme accents are persisted as `AppThemeAccent` values. The renderer maps the setting to a `theme-*` class on the shell and CSS variables drive:
+Theme accents are persisted as `AppThemeAccent` values. Appearance mode is persisted as `AppThemeMode` with `system`, `light`, and `dark` options. The renderer maps these settings to `theme-*` and `mode-*` classes on the shell, and CSS variables drive:
 
 - title bar chrome
 - focus rings
 - selected history item states
 - switches
 - toast and empty states
+- image preview surfaces
 
 ## Packaging
 

@@ -3,10 +3,12 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Eclipse,
   Eraser,
   FileStack,
   Image,
   Minus,
+  Moon,
   Pause,
   Pin,
   PinOff,
@@ -15,12 +17,13 @@ import {
   Search,
   Settings,
   Square,
+  Sun,
   Trash2,
   X,
 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
-import type { AppSettings, AppState, AppThemeAccent, ClipboardItem } from '../../shared/types'
+import type { AppSettings, AppState, AppThemeAccent, AppThemeMode, ClipboardItem } from '../../shared/types'
 import { createItemTitle, describeItem, formatRelativeTime, matchesQuery } from './utils'
 
 /**
@@ -35,12 +38,27 @@ interface ThemeAccentOption {
   color: string
 }
 
+/**
+ * Appearance mode metadata used by the settings segmented control.
+ */
+interface ThemeModeOption {
+  /** Persisted appearance identifier shared with the main process settings store. */
+  id: AppThemeMode
+  /** Human-readable label rendered in the settings panel. */
+  label: string
+}
+
 const themeAccents: readonly ThemeAccentOption[] = [
   { id: 'mint', label: '薄荷绿', color: '#20b486' },
   { id: 'blue', label: '湖蓝', color: '#3278d7' },
   { id: 'violet', label: '紫罗兰', color: '#7c5cff' },
   { id: 'rose', label: '玫瑰红', color: '#d94b78' },
   { id: 'amber', label: '琥珀黄', color: '#c9861f' },
+]
+const themeModes: readonly ThemeModeOption[] = [
+  { id: 'system', label: '跟随系统' },
+  { id: 'light', label: '浅色' },
+  { id: 'dark', label: '暗黑' },
 ]
 
 const state = ref<AppState>({
@@ -57,6 +75,7 @@ const state = ref<AppState>({
     maxFilePaths: 20,
     globalShortcut: 'Alt+V',
     themeAccent: 'mint',
+    themeMode: 'system',
   },
 })
 const query = ref('')
@@ -78,7 +97,13 @@ const captureStatus = computed(() => (state.value.settings.captureEnabled ? '正
 const currentThemeLabel = computed(
   () => themeAccents.find((accent) => accent.id === state.value.settings.themeAccent)?.label ?? themeAccents[0].label,
 )
-const shellClass = computed(() => `theme-${state.value.settings.themeAccent}`)
+const currentThemeModeLabel = computed(
+  () => themeModes.find((mode) => mode.id === state.value.settings.themeMode)?.label ?? themeModes[0].label,
+)
+const shellClasses = computed(() => [
+  `theme-${state.value.settings.themeAccent}`,
+  `mode-${state.value.settings.themeMode}`,
+])
 
 /**
  * Loads initial app state and wires main-process updates into Vue state.
@@ -216,7 +241,7 @@ function handleKeyboard(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <main class="shell" :class="shellClass" @keydown="handleKeyboard">
+  <main class="shell" :class="shellClasses" @keydown="handleKeyboard">
     <header class="window-frame">
       <div class="window-title">
         <img class="window-icon" :src="appIconUrl" alt="" />
@@ -280,6 +305,31 @@ function handleKeyboard(event: KeyboardEvent): void {
       </div>
 
       <section v-if="showSettings" class="settings-pane" aria-label="设置">
+        <div class="setting-row mode-setting">
+          <div>
+            <strong>外观</strong>
+            <span>{{ currentThemeModeLabel }}</span>
+          </div>
+          <div class="segmented-control" role="radiogroup" aria-label="外观模式">
+            <button
+              v-for="mode in themeModes"
+              :key="mode.id"
+              class="segment-button"
+              :class="{ selected: state.settings.themeMode === mode.id }"
+              type="button"
+              role="radio"
+              :aria-checked="state.settings.themeMode === mode.id"
+              :title="mode.label"
+              @click="updateSettings({ themeMode: mode.id })"
+            >
+              <Eclipse v-if="mode.id === 'system'" :size="15" />
+              <Sun v-else-if="mode.id === 'light'" :size="15" />
+              <Moon v-else :size="15" />
+              <span>{{ mode.label }}</span>
+            </button>
+          </div>
+        </div>
+
         <div class="setting-row theme-setting">
           <div>
             <strong>主题色</strong>
@@ -392,26 +442,42 @@ function handleKeyboard(event: KeyboardEvent): void {
           v-for="(item, index) in filteredItems"
           :key="item.id"
           class="history-item"
-          :class="{ selected: selectedIndex === index, pinned: item.pinned }"
+          :class="[`history-item-${item.kind}`, { selected: selectedIndex === index, pinned: item.pinned }]"
           @mouseenter="selectedIndex = index"
           @dblclick="copyItem(item)"
         >
           <button class="item-main" type="button" @click="copyItem(item)">
-            <span class="item-content">
+            <span v-if="item.kind === 'image'" class="image-item-layout">
               <span class="item-kind" :class="`kind-${item.kind}`">
-                <Image v-if="item.kind === 'image'" :size="17" />
-                <FileStack v-else-if="item.kind === 'file'" :size="17" />
-                <Copy v-else :size="17" />
+                <Image :size="17" />
               </span>
-              <span class="item-body">
-                <img v-if="item.kind === 'image'" class="image-preview" :src="item.dataUrl" alt="" />
-                <span v-else class="item-preview">{{ createItemTitle(item) }}</span>
+              <span class="image-preview-frame">
+                <img class="image-preview" :src="item.dataUrl" alt="" />
+              </span>
+              <span class="image-item-copy">
+                <span class="item-preview">{{ createItemTitle(item) }}</span>
+                <span class="item-meta">
+                  {{ describeItem(item) }} · {{ formatRelativeTime(item.updatedAt, now) }}
+                  <template v-if="item.copyCount"> · 已用 {{ item.copyCount }} 次</template>
+                </span>
               </span>
             </span>
-            <span class="item-meta">
-              {{ describeItem(item) }} · {{ formatRelativeTime(item.updatedAt, now) }}
-              <template v-if="item.copyCount"> · 已用 {{ item.copyCount }} 次</template>
-            </span>
+
+            <template v-else>
+              <span class="item-content">
+                <span class="item-kind" :class="`kind-${item.kind}`">
+                  <FileStack v-if="item.kind === 'file'" :size="17" />
+                  <Copy v-else :size="17" />
+                </span>
+                <span class="item-body">
+                  <span class="item-preview">{{ createItemTitle(item) }}</span>
+                </span>
+              </span>
+              <span class="item-meta">
+                {{ describeItem(item) }} · {{ formatRelativeTime(item.updatedAt, now) }}
+                <template v-if="item.copyCount"> · 已用 {{ item.copyCount }} 次</template>
+              </span>
+            </template>
           </button>
 
           <div class="item-actions">

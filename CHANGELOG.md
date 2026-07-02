@@ -4,6 +4,17 @@ All notable changes to LightClip are documented in this file.
 
 This project follows semantic versioning while it remains in early development. Breaking changes may still occur before `1.0.0`, but they should be called out in release notes.
 
+## Unreleased
+
+### Added
+
+- Added appearance mode switching with system, light, and dark options.
+
+### Changed
+
+- Expanded theme accents so they affect the full app surface instead of only small accent elements.
+- Improved image clipboard history layout with a dedicated preview frame and metadata block.
+
 ## [0.1.2] - 2026-07-02
 
 ### Added

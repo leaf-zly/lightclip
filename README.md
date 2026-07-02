@@ -54,6 +54,7 @@ Open the settings panel from the top-right toolbar.
 | File history | Off | Stores file paths, not file contents. |
 | History limit | `300` | Applies to non-pinned records. |
 | Global shortcut | `Alt + V` | Re-registers when changed. |
+| Appearance | System | Supports system, light, and dark modes. |
 | Theme accent | Mint | Changes chrome, focus, switch, and selected item accents. |
 
 ## Keyboard Shortcuts
@@ -151,6 +152,7 @@ See [Architecture](docs/ARCHITECTURE.md) for more detail.
 - [Privacy And Data Handling](docs/PRIVACY.md)
 - [Governance](docs/GOVERNANCE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Roadmap](docs/ROADMAP.md)
 
 ## Known Limitations
 

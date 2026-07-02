@@ -5,6 +5,11 @@ export type ClipboardItemKind = 'text' | 'image' | 'file'
  */
 export type AppThemeAccent = 'mint' | 'blue' | 'violet' | 'rose' | 'amber'
 
+/**
+ * Visual appearance modes supported by LightClip.
+ */
+export type AppThemeMode = 'system' | 'light' | 'dark'
+
 interface ClipboardItemBase {
   /** Stable generated identifier used by renderer operations. */
   id: string
@@ -84,6 +89,8 @@ export interface AppSettings {
   globalShortcut: string
   /** Accent color palette used by the window chrome and interactive states. */
   themeAccent: AppThemeAccent
+  /** Light/dark appearance preference used by the renderer theme system. */
+  themeMode: AppThemeMode
 }
 
 /**
