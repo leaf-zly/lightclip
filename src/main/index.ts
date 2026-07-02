@@ -51,6 +51,10 @@ async function bootstrap(): Promise<void> {
   createWindow()
   registerGlobalShortcut(store.getState().settings.globalShortcut)
   startClipboardWatcher()
+
+  if (!shouldStartHidden()) {
+    showPanel()
+  }
 }
 
 app.setName('LightClip')
@@ -429,8 +433,15 @@ function applyLaunchAtLogin(enabled: boolean): void {
   app.setLoginItemSettings({
     openAtLogin: enabled,
     path: process.execPath,
-    args: isDevelopment ? [app.getAppPath()] : [],
+    args: isDevelopment ? [app.getAppPath(), '--hidden'] : ['--hidden'],
   })
+}
+
+/**
+ * Detects launches initiated by the OS startup registration.
+ */
+function shouldStartHidden(): boolean {
+  return process.argv.includes('--hidden')
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {

@@ -1,13 +1,13 @@
 {
   "name": "lightclip-electron",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "A lightweight and polished Windows clipboard history app.",
   "author": "qiang.tan",
-  "homepage": "https://github.com/1249190004/lightclip#readme",
+  "homepage": "https://github.com/leaf-zly/lightclip#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/1249190004/lightclip.git"
+    "url": "https://github.com/leaf-zly/lightclip.git"
   },
   "main": "dist/main/index.js",
   "type": "module",
