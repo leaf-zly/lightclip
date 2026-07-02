@@ -69,6 +69,8 @@ export type ClipboardItem = TextClipboardItem | ImageClipboardItem | FileClipboa
 export interface AppSettings {
   /** Whether clipboard polling should add new records. */
   captureEnabled: boolean
+  /** Runtime timestamp until which capture is paused; null means no temporary pause. */
+  capturePausedUntil: number | null
   /** Whether LightClip should launch when the current user signs in. */
   launchAtLogin: boolean
   /** Maximum number of non-pinned items retained in the local store. */
@@ -85,6 +87,8 @@ export interface AppSettings {
   maxImageBytes: number
   /** Maximum number of file paths accepted by the capture pipeline. */
   maxFilePaths: number
+  /** Number of days to retain non-pinned history; 0 disables age-based cleanup. */
+  retentionDays: number
   /** Global shortcut used to show or hide the quick panel. */
   globalShortcut: string
   /** Accent color palette used by the window chrome and interactive states. */
@@ -101,6 +105,44 @@ export interface AppState {
   items: ClipboardItem[]
   /** Current application settings. */
   settings: AppSettings
+  /** Current on-disk store size in bytes. */
+  storageBytes: number
+}
+
+/**
+ * Metadata returned after writing a portable history export file.
+ */
+export interface HistoryExportResult {
+  /** Absolute path selected by the user. */
+  filePath: string
+  /** Number of history items written to the export file. */
+  itemCount: number
+}
+
+/**
+ * Metadata returned after importing a portable history export file.
+ */
+export interface HistoryImportResult {
+  /** Absolute path selected by the user. */
+  filePath: string
+  /** Number of new history items merged into the local store. */
+  importedCount: number
+  /** Total number of history items after import and retention trimming. */
+  totalCount: number
+}
+
+/**
+ * Portable JSON shape written by the history export workflow.
+ */
+export interface HistoryExportSnapshot {
+  /** Store schema version used by the exporting app. */
+  version: number
+  /** ISO timestamp indicating when the export was created. */
+  exportedAt: string
+  /** Settings captured for backup and diagnostics. */
+  settings: AppSettings
+  /** Clipboard records included in the export. */
+  items: ClipboardItem[]
 }
 
 /**
@@ -124,6 +166,9 @@ export const IPC_CHANNELS = {
   deleteItem: 'lightclip:delete-item',
   togglePin: 'lightclip:toggle-pin',
   clearHistory: 'lightclip:clear-history',
+  clearByKind: 'lightclip:clear-by-kind',
+  exportHistory: 'lightclip:export-history',
+  importHistory: 'lightclip:import-history',
   updateSettings: 'lightclip:update-settings',
   minimizeWindow: 'lightclip:minimize-window',
   toggleMaximizeWindow: 'lightclip:toggle-maximize-window',
@@ -148,6 +193,12 @@ export interface LightClipApi {
   togglePin: (id: string) => Promise<CommandResult<ClipboardItem>>
   /** Deletes non-pinned records from history. */
   clearHistory: () => Promise<CommandResult>
+  /** Deletes non-pinned records of a specific clipboard kind. */
+  clearByKind: (kind: ClipboardItemKind) => Promise<CommandResult>
+  /** Exports settings and history to a user-selected JSON file. */
+  exportHistory: () => Promise<CommandResult<HistoryExportResult>>
+  /** Imports settings and history from a user-selected JSON file. */
+  importHistory: () => Promise<CommandResult<HistoryImportResult>>
   /** Persists a partial settings update. */
   updateSettings: (settings: Partial<AppSettings>) => Promise<CommandResult<AppSettings>>
   /** Minimizes the quick panel window. */

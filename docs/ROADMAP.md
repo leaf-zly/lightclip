@@ -2,34 +2,35 @@
 
 This roadmap lists practical extensions that fit LightClip's lightweight clipboard-history direction.
 
+## Completed In v0.1.3
+
+- Larger preview on demand for text, image, and file history.
+- Filters for text, image, file, pinned, and all records.
+- Category cleanup for non-pinned records.
+- Retention days for old non-pinned records.
+- JSON import/export and store size visibility.
+- Temporary capture pause and shortcut reset controls.
+
 ## Near-Term
 
-- Better image history UX:
-  - larger preview on demand
-  - copy image metadata
-  - delete image-only history quickly
 - Richer search:
-  - filter by text, image, or file
-  - pinned-only filter
   - fuzzy matching for long snippets
+  - saved filter presets
 - Safer capture controls:
-  - temporary pause timer
   - private-mode app exclusion list
-  - clear history older than a chosen retention period
+  - one-click sensitive-content pause presets
 - Shortcut improvements:
   - validate shortcut conflicts more clearly
-  - reset shortcut to default
   - optional paste-after-select behavior
 
 ## Mid-Term
 
 - Data management:
-  - export and import history
   - encrypted local store option
-  - store size indicator and cleanup suggestions
+  - cleanup suggestions for large image history
 - Preview improvements:
   - code/text formatting preservation
-  - multi-line expanded preview
+  - multi-line expanded preview refinements
   - file path grouping and quick open location
 - Reliability:
   - end-to-end UI smoke tests

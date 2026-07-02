@@ -58,7 +58,7 @@ Clipboard history can include secrets if those secrets are copied while capture 
 
 ## Deleting Data
 
-You can delete individual history items, clear unpinned history, or delete the local store file while LightClip is not running.
+You can delete individual history items, clear one non-pinned item type, clear unpinned history, set retention days, or delete the local store file while LightClip is not running.
 
 Pinned items are intentionally preserved during bulk clear operations.
 
@@ -71,6 +71,10 @@ Image history stores PNG data URLs. This can increase local database size quickl
 ### File History
 
 File history stores paths only. Paths can still reveal sensitive project names, customer names, usernames, or directory structures.
+
+### Import And Export
+
+History export writes clipboard records and settings to a user-selected JSON file. Exports are not encrypted by LightClip, so treat them as private local backups. Import validates supported record shapes before merging records into the local store.
 
 ### Startup
 

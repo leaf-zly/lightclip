@@ -49,12 +49,12 @@ The `release/` directory is ignored by Git. Upload these files to GitHub Release
 Create a tag matching the package version:
 
 ```powershell
-gh release create v0.1.2 `
-  "release/LightClip Setup 0.1.2.exe" `
-  "release/LightClip Setup 0.1.2.exe.blockmap" `
-  "release/LightClip 0.1.2.exe" `
+gh release create v0.1.3 `
+  "release/LightClip Setup 0.1.3.exe" `
+  "release/LightClip Setup 0.1.3.exe.blockmap" `
+  "release/LightClip 0.1.3.exe" `
   "release/latest.yml" `
-  --title "LightClip v0.1.2" `
+  --title "LightClip v0.1.3" `
   --notes-file RELEASE_NOTES.md
 ```
 
@@ -76,8 +76,8 @@ Release notes should include:
 After publishing:
 
 ```powershell
-gh release view v0.1.2 --json name,tagName,url,assets
-git ls-remote --tags origin refs/tags/v0.1.2
+gh release view v0.1.3 --json name,tagName,url,assets
+git ls-remote --tags origin refs/tags/v0.1.3
 ```
 
 Confirm the release page contains all expected assets and that the tag points to the intended commit.

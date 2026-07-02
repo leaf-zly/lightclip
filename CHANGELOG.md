@@ -6,14 +6,29 @@ This project follows semantic versioning while it remains in early development. 
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## [0.1.3] - 2026-07-02
+
 ### Added
 
-- Added appearance mode switching with system, light, and dark options.
+- Added history filters for text, image, file, pinned, and all records.
+- Added large preview modal for text, image, and file history items.
+- Added JSON history import and export from user-selected files.
+- Added retention-day cleanup for non-pinned history.
+- Added store size visibility, category cleanup, shortcut reset, and temporary capture pause controls.
+- Added the MIT License.
 
-### Changed
+### Fixed
 
-- Expanded theme accents so they affect the full app surface instead of only small accent elements.
-- Improved image clipboard history layout with a dedicated preview frame and metadata block.
+- Completed the shared settings/state contract for new retention and storage fields so startup does not depend on partially migrated renderer state.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Production Electron startup smoke check.
 
 ## [0.1.2] - 2026-07-02
 
@@ -55,6 +70,7 @@ This project follows semantic versioning while it remains in early development. 
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[0.1.3]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.3
 [0.1.2]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.2
 [0.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.1
 [0.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.0

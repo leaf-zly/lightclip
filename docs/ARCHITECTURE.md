@@ -27,6 +27,7 @@ Primary state:
 
 - `settings`: user preferences and capture limits.
 - `items`: clipboard history records sorted for display.
+- `storageBytes`: current on-disk store size for lightweight storage visibility.
 
 Clipboard item kinds:
 
@@ -38,7 +39,7 @@ Clipboard item kinds:
 
 Data is written to `lightclip-store.json` in Electron `userData`.
 
-The store normalizes settings on load and update so old stores receive new defaults safely. This is required for settings such as `themeAccent` that were added after the initial release.
+The store normalizes settings and history records on load, update, and import so old stores receive new defaults safely. This is required for settings such as `themeAccent`, `themeMode`, `capturePausedUntil`, and `retentionDays` that were added after the initial release.
 
 ## Clipboard Capture
 

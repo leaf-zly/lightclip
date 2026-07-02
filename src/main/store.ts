@@ -1,3 +1,4 @@
+import { existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
@@ -7,11 +8,15 @@ import type {
   AppThemeAccent,
   AppThemeMode,
   ClipboardItem,
+  ClipboardItemKind,
   FileClipboardItem,
+  HistoryExportSnapshot,
   ImageClipboardItem,
 } from '../shared/types.js'
 
 const STORE_VERSION = 1
+const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_TEMPORARY_PAUSE_MS = DAY_MS
 const themeAccents: readonly AppThemeAccent[] = ['mint', 'blue', 'violet', 'rose', 'amber']
 const themeModes: readonly AppThemeMode[] = ['system', 'light', 'dark']
 
@@ -23,6 +28,7 @@ interface PersistedStore {
 
 const defaultSettings: AppSettings = {
   captureEnabled: true,
+  capturePausedUntil: null,
   launchAtLogin: false,
   maxHistoryItems: 300,
   minTextLength: 1,
@@ -31,6 +37,7 @@ const defaultSettings: AppSettings = {
   captureFiles: false,
   maxImageBytes: 5 * 1024 * 1024,
   maxFilePaths: 20,
+  retentionDays: 0,
   globalShortcut: 'Alt+V',
   themeAccent: 'mint',
   themeMode: 'system',
@@ -83,6 +90,7 @@ export class ClipboardStore {
     return {
       settings: { ...this.state.settings },
       items: this.getSortedItems(),
+      storageBytes: this.getStorageBytes(),
     }
   }
 
@@ -242,6 +250,19 @@ export class ClipboardStore {
   }
 
   /**
+   * Removes non-pinned entries of a specific kind and returns the deletion count.
+   */
+  async clearByKind(kind: ClipboardItemKind): Promise<number> {
+    const before = this.state.items.length
+    this.state.items = this.state.items.filter((item) => item.pinned || item.kind !== kind)
+    const deletedCount = before - this.state.items.length
+    if (deletedCount > 0) {
+      await this.save()
+    }
+    return deletedCount
+  }
+
+  /**
    * Persists user settings after validating retention boundaries.
    */
   async updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
@@ -262,19 +283,69 @@ export class ClipboardStore {
     return item ? cloneClipboardItem(item) : null
   }
 
+  /**
+   * Creates a portable export payload containing settings and sorted history.
+   */
+  createExportSnapshot(): HistoryExportSnapshot {
+    return {
+      version: STORE_VERSION,
+      exportedAt: new Date().toISOString(),
+      settings: { ...this.state.settings },
+      items: this.getSortedItems(),
+    }
+  }
+
+  /**
+   * Merges imported history items after validation, deduplication, and retention trimming.
+   */
+  async importItems(items: unknown[]): Promise<number> {
+    const normalizedItems = items.map(normalizeClipboardItem).filter(isClipboardItem).map(cloneClipboardItem)
+    let insertedCount = 0
+
+    for (const incoming of normalizedItems) {
+      const existing = this.state.items.find((item) => createClipboardSignature(item) === createClipboardSignature(incoming))
+      if (existing) {
+        existing.pinned = existing.pinned || incoming.pinned
+        existing.copyCount = Math.max(existing.copyCount, incoming.copyCount)
+        existing.createdAt = Math.min(existing.createdAt, incoming.createdAt)
+        existing.updatedAt = Math.max(existing.updatedAt, incoming.updatedAt)
+        continue
+      }
+
+      this.state.items.push({
+        ...incoming,
+        id: this.ensureUniqueItemId(incoming.id),
+      })
+      insertedCount += 1
+    }
+
+    if (normalizedItems.length > 0) {
+      this.trimOverflow()
+      await this.save()
+    }
+
+    return insertedCount
+  }
+
   private canCapture(text: string): boolean {
-    const { captureEnabled, minTextLength, maxTextLength } = this.state.settings
-    return captureEnabled && text.length >= minTextLength && text.length <= maxTextLength
+    const { captureEnabled, capturePausedUntil, minTextLength, maxTextLength } = this.state.settings
+    return captureEnabled && !isCaptureTemporarilyPaused(capturePausedUntil) && text.length >= minTextLength && text.length <= maxTextLength
   }
 
   private canCaptureImage(byteSize: number): boolean {
-    const { captureEnabled, captureImages, maxImageBytes } = this.state.settings
-    return captureEnabled && captureImages && byteSize > 0 && byteSize <= maxImageBytes
+    const { captureEnabled, capturePausedUntil, captureImages, maxImageBytes } = this.state.settings
+    return captureEnabled && !isCaptureTemporarilyPaused(capturePausedUntil) && captureImages && byteSize > 0 && byteSize <= maxImageBytes
   }
 
   private canCaptureFiles(paths: string[]): boolean {
-    const { captureEnabled, captureFiles, maxFilePaths } = this.state.settings
-    return captureEnabled && captureFiles && paths.length > 0 && paths.length <= maxFilePaths
+    const { captureEnabled, capturePausedUntil, captureFiles, maxFilePaths } = this.state.settings
+    return (
+      captureEnabled &&
+      !isCaptureTemporarilyPaused(capturePausedUntil) &&
+      captureFiles &&
+      paths.length > 0 &&
+      paths.length <= maxFilePaths
+    )
   }
 
   private getSortedItems(): ClipboardItem[] {
@@ -285,12 +356,33 @@ export class ClipboardStore {
 
   private trimOverflow(): void {
     const pinned = this.state.items.filter((item) => item.pinned)
+    const retentionCutoff = this.createRetentionCutoff()
     const regular = this.state.items
-      .filter((item) => !item.pinned)
+      .filter((item) => !item.pinned && (!retentionCutoff || item.updatedAt >= retentionCutoff))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, this.state.settings.maxHistoryItems)
 
     this.state.items = [...pinned, ...regular]
+  }
+
+  private createRetentionCutoff(): number | null {
+    return this.state.settings.retentionDays > 0 ? Date.now() - this.state.settings.retentionDays * DAY_MS : null
+  }
+
+  private getStorageBytes(): number {
+    try {
+      return existsSync(this.filePath) ? statSync(this.filePath).size : 0
+    } catch {
+      return 0
+    }
+  }
+
+  private ensureUniqueItemId(preferredId: string): string {
+    if (preferredId && !this.state.items.some((item) => item.id === preferredId)) {
+      return preferredId
+    }
+
+    return createItemId()
   }
 
   private async save(): Promise<void> {
@@ -316,6 +408,10 @@ function normalizeClipboardText(text: string): string {
 function normalizeSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
+    captureEnabled: Boolean(settings.captureEnabled),
+    capturePausedUntil: normalizePauseUntil(settings.capturePausedUntil),
+    launchAtLogin: Boolean(settings.launchAtLogin),
+    retentionDays: clampInteger(settings.retentionDays, 0, 3650),
     maxHistoryItems: clampInteger(settings.maxHistoryItems, 20, 3000),
     minTextLength: clampInteger(settings.minTextLength, 1, 2000),
     maxTextLength: clampInteger(settings.maxTextLength, 100, 200000),
@@ -323,12 +419,31 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     captureFiles: Boolean(settings.captureFiles),
     maxImageBytes: clampInteger(settings.maxImageBytes, 128 * 1024, 100 * 1024 * 1024),
     maxFilePaths: clampInteger(settings.maxFilePaths, 1, 200),
-    globalShortcut: settings.globalShortcut.trim() || defaultSettings.globalShortcut,
+    globalShortcut:
+      typeof settings.globalShortcut === 'string' && settings.globalShortcut.trim()
+        ? settings.globalShortcut.trim()
+        : defaultSettings.globalShortcut,
     themeAccent: normalizeThemeAccent(settings.themeAccent),
     themeMode: normalizeThemeMode(settings.themeMode),
   }
 }
 
+function normalizePauseUntil(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  const timestamp = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(timestamp) || timestamp <= Date.now()) {
+    return null
+  }
+
+  return Math.min(timestamp, Date.now() + MAX_TEMPORARY_PAUSE_MS)
+}
+
+function isCaptureTemporarilyPaused(pausedUntil: number | null): boolean {
+  return typeof pausedUntil === 'number' && pausedUntil > Date.now()
+}
 function normalizeThemeAccent(value: unknown): AppThemeAccent {
   return typeof value === 'string' && themeAccents.includes(value as AppThemeAccent)
     ? (value as AppThemeAccent)
@@ -393,12 +508,61 @@ function normalizeClipboardItem(value: unknown): ClipboardItem | null {
   }
 
   const item = value as Partial<ClipboardItem> & { text?: unknown; kind?: unknown }
-  // Existing MVP stores did not have a kind field; keep those text records intact.
-  if (!item.kind && typeof item.text === 'string') {
-    return { ...(item as Omit<ClipboardItem, 'kind'>), kind: 'text' } as ClipboardItem
+  const now = Date.now()
+  const base = {
+    id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : createItemId(),
+    pinned: Boolean(item.pinned),
+    copyCount: clampInteger(Number(item.copyCount), 0, Number.MAX_SAFE_INTEGER),
+    createdAt: normalizeTimestamp(item.createdAt, now),
+    updatedAt: normalizeTimestamp(item.updatedAt, now),
   }
 
-  return item as ClipboardItem
+  // Existing MVP stores did not have a kind field; keep those text records intact.
+  if ((!item.kind || item.kind === 'text') && typeof item.text === 'string') {
+    const text = normalizeClipboardText(item.text)
+    return text ? { ...base, kind: 'text', text } : null
+  }
+
+  if (item.kind === 'image') {
+    const image = item as Partial<ImageClipboardItem>
+    if (typeof image.dataUrl !== 'string' || !image.dataUrl.startsWith('data:image/png;base64,')) {
+      return null
+    }
+
+    return {
+      ...base,
+      kind: 'image',
+      dataUrl: image.dataUrl,
+      width: clampInteger(Number(image.width), 1, 100_000),
+      height: clampInteger(Number(image.height), 1, 100_000),
+      byteSize: clampInteger(Number(image.byteSize), 1, 100 * 1024 * 1024),
+    }
+  }
+
+  if (item.kind === 'file') {
+    const candidatePaths = (item as Partial<FileClipboardItem>).paths
+    const paths = normalizeFilePaths(Array.isArray(candidatePaths) ? candidatePaths : [])
+    return paths.length ? { ...base, kind: 'file', paths } : null
+  }
+
+  return null
+}
+
+function normalizeTimestamp(value: unknown, fallback: number): number {
+  const timestamp = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(timestamp) && timestamp > 0 ? Math.round(timestamp) : fallback
+}
+
+function createClipboardSignature(item: ClipboardItem): string {
+  if (item.kind === 'image') {
+    return `image:${item.dataUrl}`
+  }
+
+  if (item.kind === 'file') {
+    return `file:${createFileSignature(item.paths)}`
+  }
+
+  return `text:${item.text}`
 }
 
 function normalizeFilePaths(paths: string[]): string[] {

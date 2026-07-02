@@ -88,14 +88,17 @@ Clipboard managers handle high-risk data. Contributions must preserve these boun
 
 ## Commit Style
 
-Use concise imperative commit messages:
+Use [Conventional Commits](https://www.conventionalcommits.org/) for all commits:
 
 ```text
-Add theme accent settings
-Fix packaged renderer asset paths
-Document release process
+feat: add history export
+fix: handle packaged renderer loading
+docs: update release process
+chore: bump release metadata
 ```
+
+Common prefixes are `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `build`, and `ci`. Keep the subject concise and imperative after the prefix.
 
 ## License Notice
 
-No open-source license has been selected yet. Broad external contributions should wait until the repository owner adds a formal `LICENSE` file or explicitly confirms the intended license for a contribution.
+By contributing, you agree that your contribution is licensed under the [MIT License](LICENSE) unless a separate written agreement says otherwise.

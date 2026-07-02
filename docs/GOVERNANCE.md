@@ -28,7 +28,7 @@ For larger changes, maintainers should ask for an issue or design discussion fir
 
 ## Contribution Policy
 
-External contributions are welcome once the repository has a formal license. Until a `LICENSE` file is added, broad external contributions should be treated carefully because licensing terms are not yet defined.
+External contributions are welcome under the MIT License. Maintainers should still ask for a design discussion before accepting changes that affect privacy, persistence, security-sensitive IPC, or release behavior.
 
 ## Release Authority
 

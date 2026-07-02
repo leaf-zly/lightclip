@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
@@ -8,15 +9,27 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
   globalShortcut,
   ipcMain,
   nativeImage,
   nativeTheme,
   screen,
   shell,
+  type OpenDialogOptions,
+  type SaveDialogOptions,
 } from 'electron'
 import { ClipboardStore } from './store.js'
-import { IPC_CHANNELS, type AppSettings, type ClipboardItem, type CommandResult } from '../shared/types.js'
+import {
+  IPC_CHANNELS,
+  type AppSettings,
+  type ClipboardItem,
+  type ClipboardItemKind,
+  type CommandResult,
+  type HistoryExportResult,
+  type HistoryExportSnapshot,
+  type HistoryImportResult,
+} from '../shared/types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
@@ -514,6 +527,9 @@ function writeFileDropListToClipboard(paths: string[]): boolean {
   return true
 }
 
+function isClipboardItemKind(value: unknown): value is ClipboardItemKind {
+  return value === 'text' || value === 'image' || value === 'file'
+}
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -547,6 +563,65 @@ ipcMain.handle(IPC_CHANNELS.clearHistory, async (): Promise<CommandResult> => {
   await store.clearHistory()
   broadcastState()
   return { ok: true }
+})
+
+ipcMain.handle(IPC_CHANNELS.clearByKind, async (_event, kind: ClipboardItemKind): Promise<CommandResult> => {
+  if (!isClipboardItemKind(kind)) {
+    return { ok: false, error: '不支持的历史类型' }
+  }
+
+  await store.clearByKind(kind)
+  broadcastState()
+  return { ok: true }
+})
+
+ipcMain.handle(IPC_CHANNELS.exportHistory, async (): Promise<CommandResult<HistoryExportResult>> => {
+  try {
+    const snapshot = store.createExportSnapshot()
+    const saveOptions: SaveDialogOptions = {
+      title: '导出 LightClip 历史',
+      defaultPath: `LightClip-history-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'LightClip History', extensions: ['json'] }],
+    }
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, saveOptions) : await dialog.showSaveDialog(saveOptions)
+
+    if (result.canceled || !result.filePath) {
+      return { ok: true }
+    }
+
+    await writeFile(result.filePath, JSON.stringify(snapshot, null, 2), 'utf8')
+    return { ok: true, data: { filePath: result.filePath, itemCount: snapshot.items.length } }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '导出失败' }
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.importHistory, async (): Promise<CommandResult<HistoryImportResult>> => {
+  try {
+    const openOptions: OpenDialogOptions = {
+      title: '导入 LightClip 历史',
+      properties: ['openFile'],
+      filters: [{ name: 'LightClip History', extensions: ['json'] }],
+    }
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, openOptions) : await dialog.showOpenDialog(openOptions)
+
+    const [filePath] = result.filePaths
+    if (result.canceled || !filePath) {
+      return { ok: true }
+    }
+
+    const raw = await readFile(filePath, 'utf8')
+    const snapshot = JSON.parse(raw) as Partial<HistoryExportSnapshot>
+    if (!Array.isArray(snapshot.items)) {
+      return { ok: false, error: '导入文件格式不正确' }
+    }
+
+    const importedCount = await store.importItems(snapshot.items)
+    broadcastState()
+    return { ok: true, data: { filePath, importedCount, totalCount: store.getState().items.length } }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '导入失败' }
+  }
 })
 
 ipcMain.handle(

@@ -2,7 +2,7 @@
 
 LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> Current release: `v0.1.2`. This version unifies the window chrome and content styling, adds theme accent switching, and keeps the packaged app loading fix from `v0.1.1`.
+> Current release: `v0.1.3`. This version adds history filters, preview, retention cleanup, import/export, storage visibility, and the MIT license while keeping the packaged app loading fix from `v0.1.1`.
 
 ## Project Status
 
@@ -10,7 +10,7 @@ LightClip is in early public development. The core text clipboard workflow is us
 
 ## Features
 
-- Text clipboard history with deduplication, search, pinning, deletion, and bulk cleanup for unpinned items.
+- Text clipboard history with deduplication, search, type filters, pinning, preview, deletion, and bulk cleanup for unpinned items.
 - Optional image history for screenshots and image clipboard payloads.
 - Optional file history for file paths copied from Windows Explorer.
 - Local-only persistence under Electron `userData`; no sync service or telemetry is included.
@@ -19,6 +19,7 @@ LightClip is in early public development. The core text clipboard workflow is us
 - Global shortcut support, defaulting to `Alt + V`.
 - Compact custom title bar with native window controls and no traditional menu bar.
 - Theme accent switching: Mint, Blue, Violet, Rose, and Amber.
+- Data management tools for JSON import/export, retention days, category cleanup, and store size visibility.
 
 ## Download
 
@@ -136,7 +137,7 @@ LightClip uses a small Electron split:
 
 - `src/main`: Electron main process, tray integration, global shortcut, clipboard polling, persistence, and packaging-facing behavior.
 - `src/preload`: narrow context bridge exposed to the renderer.
-- `src/renderer`: Vue 3 interface for searching, settings, history actions, and theme accents.
+- `src/renderer`: Vue 3 interface for searching, filtering, preview, settings, history actions, and theme accents.
 - `src/shared`: shared IPC and state types.
 
 See [Architecture](docs/ARCHITECTURE.md) for more detail.
@@ -167,4 +168,4 @@ Please do not report exploitable vulnerabilities in public issues. Read [SECURIT
 
 ## License
 
-No open-source license has been selected yet. Until a `LICENSE` file is added, this repository should be treated as source-available with all rights reserved by the owner. A license decision is required before accepting broad third-party contributions.
+LightClip is released under the [MIT License](LICENSE).
