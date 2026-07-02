@@ -1,20 +1,25 @@
-# LightClip v0.1.1
+# LightClip v0.1.2
 
-这是一个修复空白窗口问题的补丁版本。
+## Highlights
 
-## 修复
+- Unified the title bar and main content colors so the app chrome feels like one product surface.
+- Added theme accent switching in settings: Mint, Blue, Violet, Rose, Amber.
+- Removed the traditional `File / Edit / View / Window` menu bar from the app UI.
+- Preserved the packaged-app blank window fix from `v0.1.1`.
 
-- 修复 Windows 安装版和便携版在 `file://` 环境下加载前端资源时可能显示空白窗口的问题。
-- 生产构建改为相对资源路径，确保 CSS、JavaScript 和标题栏图标能从打包后的 `index.html` 正确加载。
-- 构建时清理旧的 renderer 资源，避免历史 assets 混入发布包。
-- 普通双击启动会直接显示面板；开机自启仍会后台启动到托盘。
+## Download
 
-## 下载
+- `LightClip Setup 0.1.2.exe`: installer for daily use.
+- `LightClip 0.1.2.exe`: portable build that can run directly.
 
-- `LightClip Setup 0.1.1.exe`：安装版，适合长期使用。
-- `LightClip 0.1.1.exe`：便携版，下载后直接运行。
+## Verification
 
-## 注意事项
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Production Electron startup smoke check.
 
-- 当前版本未做代码签名，Windows 首次运行可能提示未知发布者。
-- 图片历史和文件历史涉及敏感内容，默认关闭，建议按需开启。
+## Notes
+
+- The app is not code signed yet, so Windows may show an unknown publisher warning.
+- Image history and file history remain opt-in because clipboard data can be sensitive.

@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a reproducible problem in LightClip.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve LightClip. Please redact clipboard contents, file paths, screenshots, and secrets before attaching details.
+  - type: input
+    id: version
+    attributes:
+      label: LightClip version
+      description: Example: 0.1.2
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Build type
+      options:
+        - Installer
+        - Portable
+        - Development
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Example: Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the shortest reliable steps.
+      placeholder: |
+        1. Start LightClip
+        2. Copy ...
+        3. Press Alt+V
+        4. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: settings
+    attributes:
+      label: Enabled settings
+      options:
+        - label: Startup
+        - label: Image history
+        - label: File history
+        - label: Custom global shortcut
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or recordings
+      description: Attach sanitized UI screenshots if helpful.
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Include logs only if they do not contain private clipboard data.

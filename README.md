@@ -1,120 +1,168 @@
 # LightClip
 
-LightClip 是一个轻量、漂亮、偏隐私友好的 Windows 剪贴板历史工具。它常驻托盘，按 `Alt + V` 即可呼出搜索面板，用来快速找回复制过的文本、图片和文件。
+LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> v0.1.2 统一了窗口头部和主体区域的视觉风格，并新增主题色切换。
+> Current release: `v0.1.2`. This version unifies the window chrome and content styling, adds theme accent switching, and keeps the packaged app loading fix from `v0.1.1`.
 
-## 特性
+## Project Status
 
-- 文本剪贴板历史：自动去重、搜索、固定、删除、清空未固定记录。
-- 图片历史：可选开启，保存截图或图片剪贴板，并可复制回剪贴板。
-- 文件历史：可选开启，记录从资源管理器复制的文件路径；复制回 LightClip 记录时会尽量写回 Windows 文件剪贴板格式，方便继续在资源管理器中粘贴文件。
-- 托盘常驻：关闭窗口默认隐藏到托盘。
-- 开机自启：当前用户登录 Windows 后自动启动，不需要管理员权限。
-- 快捷键唤起：默认 `Alt + V`。
-- 本地存储：历史数据保存在 Electron `userData` 目录，不上传网络。
-- 自定义标题栏：保留轻量窗口控制按钮，移除不常用的传统菜单栏。
-- 主题色切换：可在设置中选择薄荷绿、湖蓝、紫罗兰、玫瑰红或琥珀黄。
+LightClip is in early public development. The core text clipboard workflow is usable, while image and file history are opt-in features that should be enabled only when you are comfortable storing that data locally.
 
-## 安装
+## Features
 
-从 GitHub Release 下载：
+- Text clipboard history with deduplication, search, pinning, deletion, and bulk cleanup for unpinned items.
+- Optional image history for screenshots and image clipboard payloads.
+- Optional file history for file paths copied from Windows Explorer.
+- Local-only persistence under Electron `userData`; no sync service or telemetry is included.
+- Tray-first behavior: closing the window hides it to the system tray.
+- Startup registration for the current Windows user without administrator privileges.
+- Global shortcut support, defaulting to `Alt + V`.
+- Compact custom title bar with native window controls and no traditional menu bar.
+- Theme accent switching: Mint, Blue, Violet, Rose, and Amber.
 
-- `LightClip Setup x.y.z.exe`：安装版，适合日常使用。
-- `LightClip x.y.z.exe`：便携版，下载后直接运行。
+## Download
 
-安装后打开 LightClip，点右上角设置按钮，可以开启：
+Download the latest build from [GitHub Releases](https://github.com/leaf-zly/lightclip/releases).
 
-- 开机自启
-- 图片历史
-- 文件历史
-- 主题色
+| Asset | Use case |
+| --- | --- |
+| `LightClip Setup x.y.z.exe` | Installer for day-to-day use. |
+| `LightClip x.y.z.exe` | Portable build that can be run directly. |
 
-## 使用
+## Requirements
 
-- `Alt + V`：显示/隐藏 LightClip。
-- `↑` / `↓`：选择历史项。
-- `Enter`：复制选中的历史项。
-- `Esc`：隐藏窗口。
-- 双击历史项：复制该项。
+- Windows 10 or Windows 11.
+- PowerShell available on the system if you want file history to paste back as native Windows file drops.
+- No network service is required after the app is installed.
 
-## 隐私说明
+## Quick Start
 
-LightClip 默认只记录文本剪贴板。图片历史和文件历史默认关闭，因为它们可能涉及截图、设计稿、证件照、文件路径等敏感内容。
+1. Install or run LightClip from a release asset.
+2. Copy text as usual.
+3. Press `Alt + V` to open LightClip.
+4. Search or use `Up` / `Down` to select an item.
+5. Press `Enter` or double-click an item to copy it back to the clipboard.
 
-建议：
+## Settings
 
-- 不要在处理密码、Token、身份证号等敏感内容时开启剪贴板记录。
-- 图片历史会增加本地数据体积。
-- 文件历史记录的是路径，不会复制文件内容到 LightClip 数据库。
+Open the settings panel from the top-right toolbar.
 
-## 数据位置
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Startup | Off | Registers LightClip for the current Windows user. |
+| Image history | Off | Stores PNG data URLs locally; can increase data size quickly. |
+| File history | Off | Stores file paths, not file contents. |
+| History limit | `300` | Applies to non-pinned records. |
+| Global shortcut | `Alt + V` | Re-registers when changed. |
+| Theme accent | Mint | Changes chrome, focus, switch, and selected item accents. |
 
-数据保存在当前用户的 Electron `userData` 目录中。可以从托盘菜单选择「打开数据目录」。
+## Keyboard Shortcuts
 
-主要数据文件：
+| Shortcut | Action |
+| --- | --- |
+| `Alt + V` | Show or hide LightClip. |
+| `Up` / `Down` | Move selection. |
+| `Enter` | Copy selected item. |
+| `Esc` | Hide the window. |
+
+## Privacy And Data
+
+LightClip is designed as a local-first utility. Clipboard history is stored on the same machine and is not uploaded by the app.
+
+Important boundaries:
+
+- Text history is enabled by default.
+- Image and file history are disabled by default because they can contain sensitive screenshots, design files, identity documents, or private file paths.
+- File history stores paths only; it does not copy file contents into the LightClip database.
+- Do not enable clipboard history while handling passwords, API tokens, private keys, personal identity numbers, or other secrets unless you understand the local storage risk.
+
+See [Privacy And Data Handling](docs/PRIVACY.md) for the full policy.
+
+## Data Location
+
+LightClip stores data in the current user's Electron `userData` directory. You can open it from the tray menu.
+
+Primary data file:
 
 ```text
 lightclip-store.json
 ```
 
-## 开发
+## Development
 
-要求：
+### Prerequisites
 
-- Node.js 22+ 或 24+
-- pnpm 11+
-- Windows 10/11
+- Node.js 22+ or 24+.
+- pnpm 11+.
+- Windows 10/11 for full clipboard and packaging verification.
 
-安装依赖：
+### Install
 
 ```powershell
 pnpm install
 ```
 
-开发运行：
+### Run In Development
 
 ```powershell
 pnpm dev
 ```
 
-或：
+or:
 
 ```powershell
 .\Start-LightClip.ps1
 ```
 
-类型检查：
+### Quality Checks
 
 ```powershell
 pnpm typecheck
-```
-
-构建：
-
-```powershell
 pnpm build
 ```
 
-打包 Windows 安装包和便携版：
+### Package Windows Builds
 
 ```powershell
 pnpm dist
 ```
 
-`electron-builder` 已配置为使用本地 `node_modules/electron/dist`，并固定到旧版 NSIS 工具链缓存，减少打包时访问 GitHub 下载 Electron runtime 或构建工具的不可控等待。
+`electron-builder` is configured to use the local `node_modules/electron/dist` runtime and a fixed NSIS toolchain cache to reduce release-time dependency on GitHub-hosted binary downloads.
 
-## 技术栈
+## Architecture
 
-- Electron
-- Vue 3
-- TypeScript
-- Vite
-- pnpm
-- electron-builder
+LightClip uses a small Electron split:
 
-## 已知边界
+- `src/main`: Electron main process, tray integration, global shortcut, clipboard polling, persistence, and packaging-facing behavior.
+- `src/preload`: narrow context bridge exposed to the renderer.
+- `src/renderer`: Vue 3 interface for searching, settings, history actions, and theme accents.
+- `src/shared`: shared IPC and state types.
 
-- 文件历史的原生粘贴能力依赖 Windows PowerShell 的 STA Clipboard API。如果系统策略禁用 PowerShell，LightClip 会回退到复制文件路径文本。
-- 图片历史以 PNG data URL 存储，建议控制图片历史开关和历史上限。
-- 当前版本没有云同步，所有数据仅保存在本机。
+See [Architecture](docs/ARCHITECTURE.md) for more detail.
+
+## Documentation
+
+- [Changelog](CHANGELOG.md)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Support Policy](SUPPORT.md)
+- [Code Of Conduct](CODE_OF_CONDUCT.md)
+- [Release Process](docs/RELEASE.md)
+- [Privacy And Data Handling](docs/PRIVACY.md)
+- [Governance](docs/GOVERNANCE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+## Known Limitations
+
+- Native file-paste restoration depends on the Windows PowerShell STA Clipboard API. If PowerShell is disabled by policy, LightClip falls back to copying file paths as text and HTML.
+- Image history is stored as PNG data URLs and should be used with sensible history limits.
+- Cloud sync is not implemented.
+- The project does not yet include automated end-to-end tests.
+
+## Security
+
+Please do not report exploitable vulnerabilities in public issues. Read [SECURITY.md](SECURITY.md) before sharing details.
+
+## License
+
+No open-source license has been selected yet. Until a `LICENSE` file is added, this repository should be treated as source-available with all rights reserved by the owner. A license decision is required before accepting broad third-party contributions.

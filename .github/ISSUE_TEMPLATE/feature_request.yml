@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest an improvement for LightClip.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Clipboard features can affect privacy, storage, and security, so please include the user problem and any sensitive-data considerations.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should LightClip do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or other designs did you consider?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Clipboard capture
+        - Search and history
+        - Image history
+        - File history
+        - Settings
+        - UI theme
+        - Packaging and release
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy impact
+      description: Does this read, store, display, export, or transmit clipboard data?
+    validations:
+      required: true

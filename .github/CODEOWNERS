@@ -1,0 +1,9 @@
+# Default code owner for the repository.
+* @leaf-zly
+
+# Release, security, and community-facing files deserve explicit owner review.
+/.github/ @leaf-zly
+/docs/ @leaf-zly
+/CHANGELOG.md @leaf-zly
+/SECURITY.md @leaf-zly
+/README.md @leaf-zly
