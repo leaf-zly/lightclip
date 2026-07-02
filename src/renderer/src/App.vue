@@ -169,6 +169,7 @@ const activeFilterLabel = computed(
   () => historyFilters.find((filter) => filter.id === activeFilter.value)?.label ?? historyFilters[0].label,
 )
 const storageLabel = computed(() => formatBytes(state.value.storageBytes))
+const quickThemeLabel = computed(() => (state.value.settings.themeMode === 'dark' ? '切换浅色' : '切换暗黑'))
 const shellClasses = computed(() => [
   `theme-${state.value.settings.themeAccent}`,
   `mode-${state.value.settings.themeMode}`,
@@ -304,6 +305,11 @@ async function toggleCapture(): Promise<void> {
 async function resetShortcut(): Promise<void> {
   await updateSettings({ globalShortcut: DEFAULT_SHORTCUT })
   showToast('已重置快捷键')
+}
+
+async function toggleThemeMode(): Promise<void> {
+  const nextMode: AppThemeMode = state.value.settings.themeMode === 'dark' ? 'light' : 'dark'
+  await updateSettings({ themeMode: nextMode })
 }
 
 async function quitApp(): Promise<void> {
@@ -454,6 +460,10 @@ function handleKeyboard(event: KeyboardEvent): void {
           </button>
           <button class="icon-button" type="button" title="临时暂停 15 分钟" @click="pauseCapture()">
             <TimerReset :size="18" />
+          </button>
+          <button class="icon-button" type="button" :title="quickThemeLabel" @click="toggleThemeMode">
+            <Sun v-if="state.settings.themeMode === 'dark'" :size="18" />
+            <Moon v-else :size="18" />
           </button>
           <button class="icon-button" type="button" title="设置" @click="showSettings = !showSettings">
             <Settings :size="18" />

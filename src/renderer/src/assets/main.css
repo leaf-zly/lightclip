@@ -277,6 +277,7 @@ h1 {
 .item-actions {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 8px;
   -webkit-app-region: no-drag;
 }
@@ -371,10 +372,22 @@ h1 {
 .settings-pane {
   display: grid;
   gap: 14px;
+  max-height: min(360px, 42vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px;
   background: var(--surface-raised);
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
   border-radius: 8px;
+}
+
+.settings-pane::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-pane::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 28%, var(--border-strong));
+  border-radius: 999px;
 }
 
 .setting-row {
@@ -867,6 +880,10 @@ kbd {
 @media (max-width: 760px) {
   .panel {
     padding: 14px;
+  }
+
+  .settings-pane {
+    max-height: min(320px, 40vh);
   }
 
   .setting-row {
