@@ -35,6 +35,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL)
 const store = new ClipboardStore()
 const appIconPath = getAppIconPath()
+const WINDOWS_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+const LIGHTCLIP_STARTUP_ENTRY_NAMES = ['electron.app.Electron', 'electron.app.LightClip']
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -59,6 +61,7 @@ interface ClipboardSnapshot {
  */
 async function bootstrap(): Promise<void> {
   await store.load()
+  cleanupLegacyDevelopmentLoginItems()
   applyLaunchAtLogin(store.getState().settings.launchAtLogin)
   Menu.setApplicationMenu(null)
   createTray()
@@ -392,11 +395,16 @@ function readFilePathsFromFormat(format: string, encoding: BufferEncoding): stri
  * Enables or disables current-user startup registration.
  */
 function applyLaunchAtLogin(enabled: boolean): void {
+  const canRegisterStartup = app.isPackaged && !process.defaultApp
   app.setLoginItemSettings({
-    openAtLogin: enabled,
+    openAtLogin: enabled && canRegisterStartup,
     path: process.execPath,
-    args: isDevelopment ? [app.getAppPath(), '--hidden'] : ['--hidden'],
+    args: enabled && canRegisterStartup ? ['--hidden'] : [],
   })
+
+  if (enabled && !canRegisterStartup) {
+    console.warn('Skipping launch-at-login registration outside the packaged LightClip runtime.')
+  }
 }
 
 /**
@@ -404,6 +412,57 @@ function applyLaunchAtLogin(enabled: boolean): void {
  */
 function shouldStartHidden(): boolean {
   return process.argv.includes('--hidden')
+}
+
+/**
+ * Removes old startup entries created by development or preview runs that
+ * pointed Windows at Electron itself instead of the packaged LightClip binary.
+ */
+function cleanupLegacyDevelopmentLoginItems(): void {
+  if (process.platform !== 'win32') {
+    return
+  }
+
+  for (const entryName of LIGHTCLIP_STARTUP_ENTRY_NAMES) {
+    const command = readWindowsRunEntry(entryName)
+    if (command && isDevelopmentElectronStartupCommand(command)) {
+      deleteWindowsRunEntry(entryName)
+    }
+  }
+}
+
+function readWindowsRunEntry(entryName: string): string | null {
+  const result = spawnSync('reg.exe', ['query', WINDOWS_RUN_KEY, '/v', entryName], {
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+
+  if (result.status !== 0 || !result.stdout) {
+    return null
+  }
+
+  const line = result.stdout
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(entryName))
+  const match = line?.match(/\sREG_\w+\s+(.+)$/)
+  return match?.[1]?.trim() ?? null
+}
+
+function deleteWindowsRunEntry(entryName: string): void {
+  const result = spawnSync('reg.exe', ['delete', WINDOWS_RUN_KEY, '/v', entryName, '/f'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+
+  if (result.status !== 0) {
+    console.warn(`Failed to remove legacy startup entry ${entryName}.`, result.stderr || result.stdout)
+  }
+}
+
+function isDevelopmentElectronStartupCommand(command: string): boolean {
+  const normalized = command.toLocaleLowerCase()
+  return normalized.includes('lightclip') && normalized.includes('node_modules') && normalized.includes('electron.exe')
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {

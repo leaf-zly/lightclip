@@ -63,6 +63,19 @@ Check:
 
 Startup registration is per current user and does not require administrator permissions.
 
+## Electron Welcome Window Opens At Startup
+
+If Windows opens an `Electron` window that says `To run a local app, execute...`, a development or preview startup entry is pointing to `node_modules\electron.exe` instead of `LightClip.exe`.
+
+Run:
+
+```powershell
+reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v electron.app.Electron /f
+```
+
+Current LightClip builds clean up this legacy entry on startup and only register startup from packaged builds.
+
 ## File History Does Not Paste Files In Explorer
 
 LightClip uses Windows PowerShell with STA clipboard APIs to restore native file-drop clipboard payloads.
