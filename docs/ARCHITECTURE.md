@@ -27,7 +27,8 @@ Primary state:
 
 - `settings`: user preferences and capture limits.
 - `items`: clipboard history records sorted for display.
-- `storageBytes`: current on-disk store size for lightweight storage visibility.
+- `storageBytes`: current compressed on-disk store size for lightweight storage visibility.
+- `storageDirectory` / `storageFilePath`: active data location shown in Settings.
 
 Clipboard item kinds:
 
@@ -37,7 +38,9 @@ Clipboard item kinds:
 
 ## Persistence
 
-Data is written to `lightclip-store.json` in Electron `userData`.
+Data is written to `lightclip-store.json.br` in Electron `userData` by default. The store uses compact JSON plus Brotli compression at maximum quality to reduce disk usage, especially when image history is enabled.
+
+Older `lightclip-store.json` files are still readable and are migrated to the compressed store on load. A custom storage directory is persisted separately in `lightclip-storage.json` under Electron `userData`, allowing the data file to move without losing the pointer to it.
 
 The store normalizes settings and history records on load, update, and import so old stores receive new defaults safely. This is required for settings such as `themeAccent`, `themeMode`, `capturePausedUntil`, and `retentionDays` that were added after the initial release.
 

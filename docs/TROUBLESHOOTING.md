@@ -97,8 +97,9 @@ Image history stores PNG data URLs. Reduce the history limit or disable image hi
 To reset local data:
 
 1. Quit LightClip from the tray.
-2. Open the Electron `userData` directory.
-3. Delete `lightclip-store.json`.
-4. Start LightClip again.
+2. Open the active storage directory from Settings or the tray menu.
+3. Delete `lightclip-store.json.br`.
+4. To also forget a custom storage directory, delete `lightclip-storage.json` from Electron `userData`.
+5. Start LightClip again.
 
-Do not share this file publicly because it may contain clipboard history.
+Do not share these files publicly because they may contain clipboard history or local paths.

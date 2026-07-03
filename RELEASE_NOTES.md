@@ -1,25 +1,24 @@
-# LightClip v0.1.3
+# LightClip v0.1.4
 
 ## Highlights
 
-- Added history filters for all, text, image, file, and pinned records.
-- Added large preview for text, image, and file history items.
-- Added JSON import/export for local history backups.
-- Added retention-day cleanup, store size visibility, category cleanup, and shortcut reset controls.
-- Added temporary capture pause from the top toolbar.
-- Added the MIT License.
+- Added Brotli-compressed local storage with compact JSON and maximum compression quality.
+- Added Settings controls to open, change, and reset the active storage directory.
+- Added automatic migration from legacy `lightclip-store.json` to `lightclip-store.json.br`.
+- Fixed legacy development startup entries that could open Electron's default welcome window.
+- Expanded build-time source integrity checks for storage and main-process IPC files.
 
 ## Download
 
-- `LightClip Setup 0.1.3.exe`: installer for daily use.
-- `LightClip 0.1.3.exe`: portable build that can run directly.
+- `LightClip Setup 0.1.4.exe`: installer for daily use.
+- `LightClip 0.1.4.exe`: portable build that can run directly.
 
 ## Verification
 
 - `pnpm typecheck`
 - `pnpm build`
 - `pnpm dist`
-- Production Electron startup smoke check.
+- Packaged startup and compressed-store smoke check.
 
 ## Notes
 

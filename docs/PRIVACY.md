@@ -22,15 +22,15 @@ Depending on settings, LightClip may store:
 
 ## Where Data Is Stored
 
-Data is stored in Electron `userData` for the current Windows user.
+Data is stored in Electron `userData` for the current Windows user by default. The active storage directory can be changed in Settings.
 
 Primary file:
 
 ```text
-lightclip-store.json
+lightclip-store.json.br
 ```
 
-You can open the data directory from the tray menu.
+You can open the data directory from the tray menu or Settings. Older uncompressed stores are migrated automatically.
 
 ## What Is Not Stored
 

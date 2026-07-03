@@ -1,6 +1,8 @@
 import { existsSync, statSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { brotliCompress, brotliDecompress, constants as zlibConstants } from 'node:zlib'
+import { promisify } from 'node:util'
 import { app } from 'electron'
 import type {
   AppSettings,
@@ -12,9 +14,16 @@ import type {
   FileClipboardItem,
   HistoryExportSnapshot,
   ImageClipboardItem,
+  StorageLocationResult,
 } from '../shared/types.js'
 
 const STORE_VERSION = 1
+const STORE_FILE_NAME = 'lightclip-store.json.br'
+const LEGACY_STORE_FILE_NAME = 'lightclip-store.json'
+const STORAGE_CONFIG_FILE_NAME = 'lightclip-storage.json'
+const STORE_COMPRESSION = 'brotli' as const
+const brotliCompressAsync = promisify(brotliCompress)
+const brotliDecompressAsync = promisify(brotliDecompress)
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_TEMPORARY_PAUSE_MS = DAY_MS
 const themeAccents: readonly AppThemeAccent[] = ['mint', 'blue', 'violet', 'rose', 'amber']
@@ -24,6 +33,10 @@ interface PersistedStore {
   version: number
   settings: AppSettings
   items: ClipboardItem[]
+}
+
+interface StorageConfig {
+  storageDirectory?: string | null
 }
 
 const defaultSettings: AppSettings = {
@@ -50,12 +63,20 @@ const defaultSettings: AppSettings = {
  * clipboard or UI events arrive in quick succession.
  */
 export class ClipboardStore {
-  private readonly filePath: string
+  private readonly defaultStorageDirectory: string
+  private readonly storageConfigPath: string
+  private storageDirectory: string
+  private filePath: string
+  private legacyFilePath: string
   private state: PersistedStore
   private pendingWrite: Promise<void> = Promise.resolve()
 
   constructor() {
-    this.filePath = join(app.getPath('userData'), 'lightclip-store.json')
+    this.defaultStorageDirectory = app.getPath('userData')
+    this.storageConfigPath = join(this.defaultStorageDirectory, STORAGE_CONFIG_FILE_NAME)
+    this.storageDirectory = this.defaultStorageDirectory
+    this.filePath = join(this.storageDirectory, STORE_FILE_NAME)
+    this.legacyFilePath = join(this.storageDirectory, LEGACY_STORE_FILE_NAME)
     this.state = {
       version: STORE_VERSION,
       settings: { ...defaultSettings },
@@ -67,15 +88,17 @@ export class ClipboardStore {
    * Loads persisted data from disk, falling back to defaults when the file does not exist.
    */
   async load(): Promise<void> {
+    await this.loadStorageConfig()
+
     try {
-      const raw = await readFile(this.filePath, 'utf8')
-      const parsed = JSON.parse(raw) as Partial<PersistedStore>
+      const parsed = await this.readPersistedStore()
       this.state = {
         version: STORE_VERSION,
         settings: normalizeSettings({ ...defaultSettings, ...parsed.settings }),
         items: Array.isArray(parsed.items) ? parsed.items.map(normalizeClipboardItem).filter(isClipboardItem) : [],
       }
       this.trimOverflow()
+      await this.save()
     } catch (error) {
       if (!isMissingFileError(error)) {
         console.warn('Failed to load LightClip store, using defaults.', error)
@@ -91,7 +114,65 @@ export class ClipboardStore {
       settings: { ...this.state.settings },
       items: this.getSortedItems(),
       storageBytes: this.getStorageBytes(),
+      storageDirectory: this.storageDirectory,
+      storageFilePath: this.filePath,
+      storageCompression: STORE_COMPRESSION,
     }
+  }
+
+  /**
+   * Returns the active directory containing LightClip's compressed store file.
+   */
+  getStorageDirectory(): string {
+    return this.storageDirectory
+  }
+
+  /**
+   * Returns current storage metadata for UI feedback and IPC responses.
+   */
+  getStorageLocation(): StorageLocationResult {
+    return {
+      directory: this.storageDirectory,
+      filePath: this.filePath,
+      storageBytes: this.getStorageBytes(),
+      compression: STORE_COMPRESSION,
+    }
+  }
+
+  /**
+   * Moves the active store to a new directory after verifying the target is writable.
+   */
+  async moveStorageDirectory(directory: string): Promise<StorageLocationResult> {
+    const targetDirectory = resolve(directory)
+    await this.pendingWrite.catch(() => undefined)
+    await ensureWritableDirectory(targetDirectory)
+
+    if (isSamePath(targetDirectory, this.storageDirectory)) {
+      await this.writeStorageConfig(targetDirectory)
+      await this.save()
+      return this.getStorageLocation()
+    }
+
+    const previousFilePath = this.filePath
+    const previousLegacyFilePath = this.legacyFilePath
+    const nextFilePath = join(targetDirectory, STORE_FILE_NAME)
+
+    await writeCompressedStoreFile(nextFilePath, JSON.stringify(this.state))
+    await this.writeStorageConfig(targetDirectory)
+    this.setStorageDirectory(targetDirectory)
+    await Promise.all([
+      removeStoreFileIfDifferent(previousFilePath, this.filePath),
+      removeStoreFileIfDifferent(previousLegacyFilePath, this.filePath),
+    ])
+
+    return this.getStorageLocation()
+  }
+
+  /**
+   * Moves the active store back to Electron's default user data directory.
+   */
+  async resetStorageDirectory(): Promise<StorageLocationResult> {
+    return this.moveStorageDirectory(this.defaultStorageDirectory)
   }
 
   /**
@@ -371,10 +452,67 @@ export class ClipboardStore {
 
   private getStorageBytes(): number {
     try {
-      return existsSync(this.filePath) ? statSync(this.filePath).size : 0
+      if (existsSync(this.filePath)) {
+        return statSync(this.filePath).size
+      }
+
+      return existsSync(this.legacyFilePath) ? statSync(this.legacyFilePath).size : 0
     } catch {
       return 0
     }
+  }
+
+  private async loadStorageConfig(): Promise<void> {
+    try {
+      const raw = await readFile(this.storageConfigPath, 'utf8')
+      const parsed = JSON.parse(raw) as StorageConfig
+      if (typeof parsed.storageDirectory === 'string' && parsed.storageDirectory.trim()) {
+        const storageDirectory = resolve(parsed.storageDirectory)
+        await mkdir(storageDirectory, { recursive: true })
+        this.setStorageDirectory(storageDirectory)
+      }
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        console.warn('Failed to load LightClip storage location, using default directory.', error)
+      }
+    }
+  }
+
+  private async readPersistedStore(): Promise<Partial<PersistedStore>> {
+    if (existsSync(this.filePath)) {
+      const compressed = await readFile(this.filePath)
+      const raw = await decompressStorePayload(compressed)
+      return JSON.parse(raw) as Partial<PersistedStore>
+    }
+
+    if (existsSync(this.legacyFilePath)) {
+      const raw = await readFile(this.legacyFilePath, 'utf8')
+      return JSON.parse(raw) as Partial<PersistedStore>
+    }
+
+    const error = new Error('LightClip store file does not exist.') as NodeJS.ErrnoException
+    error.code = 'ENOENT'
+    throw error
+  }
+
+  private setStorageDirectory(directory: string): void {
+    this.storageDirectory = directory
+    this.filePath = join(this.storageDirectory, STORE_FILE_NAME)
+    this.legacyFilePath = join(this.storageDirectory, LEGACY_STORE_FILE_NAME)
+  }
+
+  private async writeStorageConfig(directory: string): Promise<void> {
+    if (isSamePath(directory, this.defaultStorageDirectory)) {
+      await rm(this.storageConfigPath, { force: true })
+      return
+    }
+
+    await mkdir(dirname(this.storageConfigPath), { recursive: true })
+    await writeFile(this.storageConfigPath, JSON.stringify({ storageDirectory: directory }, null, 2), 'utf8')
+  }
+
+  private async removeLegacyStoreFile(): Promise<void> {
+    await rm(this.legacyFilePath, { force: true })
   }
 
   private ensureUniqueItemId(preferredId: string): string {
@@ -386,15 +524,69 @@ export class ClipboardStore {
   }
 
   private async save(): Promise<void> {
-    const payload = JSON.stringify(this.state, null, 2)
+    const payload = JSON.stringify(this.state)
     this.pendingWrite = this.pendingWrite
       .catch(() => undefined)
       .then(async () => {
-        await mkdir(dirname(this.filePath), { recursive: true })
-        await writeFile(this.filePath, payload, 'utf8')
+        await mkdir(this.storageDirectory, { recursive: true })
+        await writeCompressedStoreFile(this.filePath, payload)
+        await this.removeLegacyStoreFile()
       })
     await this.pendingWrite
   }
+}
+
+async function writeCompressedStoreFile(filePath: string, payload: string): Promise<void> {
+  const tempFilePath = `${filePath}.${process.pid}.tmp`
+  try {
+    await writeFile(tempFilePath, await compressStorePayload(payload))
+    await rename(tempFilePath, filePath)
+  } catch (error) {
+    await rm(tempFilePath, { force: true }).catch(() => undefined)
+    throw error
+  }
+}
+
+async function compressStorePayload(payload: string): Promise<Buffer> {
+  return brotliCompressAsync(Buffer.from(payload, 'utf8'), {
+    params: {
+      [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT,
+      [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
+    },
+  })
+}
+
+async function decompressStorePayload(payload: Buffer): Promise<string> {
+  const decompressed = await brotliDecompressAsync(payload)
+  return decompressed.toString('utf8')
+}
+
+async function ensureWritableDirectory(directory: string): Promise<void> {
+  await mkdir(directory, { recursive: true })
+  const directoryStat = await stat(directory)
+  if (!directoryStat.isDirectory()) {
+    throw new Error('Selected storage path is not a directory.')
+  }
+
+  const probePath = join(directory, '.lightclip-write-test')
+  await writeFile(probePath, '')
+  await rm(probePath, { force: true })
+}
+
+async function removeStoreFileIfDifferent(filePath: string, activeFilePath: string): Promise<void> {
+  if (isSamePath(filePath, activeFilePath)) {
+    return
+  }
+
+  try {
+    await rm(filePath, { force: true })
+  } catch (error) {
+    console.warn(`Failed to remove old LightClip store file: ${filePath}`, error)
+  }
+}
+
+function isSamePath(left: string, right: string): boolean {
+  return resolve(left).toLocaleLowerCase() === resolve(right).toLocaleLowerCase()
 }
 
 function createItemId(): string {

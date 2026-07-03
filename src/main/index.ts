@@ -29,6 +29,7 @@ import {
   type HistoryExportResult,
   type HistoryExportSnapshot,
   type HistoryImportResult,
+  type StorageLocationResult,
 } from '../shared/types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -229,7 +230,7 @@ function updateTrayMenu(): void {
     {
       label: '打开数据目录',
       click: () => {
-        shell.openPath(app.getPath('userData')).catch(console.error)
+        shell.openPath(store.getStorageDirectory()).catch(console.error)
       },
     },
     {
@@ -681,6 +682,41 @@ ipcMain.handle(IPC_CHANNELS.importHistory, async (): Promise<CommandResult<Histo
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : '导入失败' }
   }
+})
+
+ipcMain.handle(IPC_CHANNELS.selectStorageDirectory, async (): Promise<CommandResult<StorageLocationResult>> => {
+  try {
+    const openOptions: OpenDialogOptions = {
+      title: '选择 LightClip 存储目录',
+      properties: ['openDirectory', 'createDirectory'],
+    }
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, openOptions) : await dialog.showOpenDialog(openOptions)
+    const [directory] = result.filePaths
+    if (result.canceled || !directory) {
+      return { ok: true }
+    }
+
+    const location = await store.moveStorageDirectory(directory)
+    broadcastState()
+    return { ok: true, data: location }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '切换存储位置失败' }
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.resetStorageDirectory, async (): Promise<CommandResult<StorageLocationResult>> => {
+  try {
+    const location = await store.resetStorageDirectory()
+    broadcastState()
+    return { ok: true, data: location }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '恢复默认存储位置失败' }
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.openStorageDirectory, async (): Promise<CommandResult> => {
+  const error = await shell.openPath(store.getStorageDirectory())
+  return error ? { ok: false, error } : { ok: true }
 })
 
 ipcMain.handle(

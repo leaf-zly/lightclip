@@ -2,7 +2,7 @@
 
 LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> Current release: `v0.1.3`. This version adds history filters, preview, retention cleanup, import/export, storage visibility, and the MIT license while keeping the packaged app loading fix from `v0.1.1`.
+> Current release: `v0.1.4`. This version adds Brotli-compressed storage, configurable storage location, and startup-entry cleanup while keeping the history management tools from `v0.1.3`.
 
 ## Project Status
 
@@ -13,13 +13,13 @@ LightClip is in early public development. The core text clipboard workflow is us
 - Text clipboard history with deduplication, search, type filters, pinning, preview, deletion, and bulk cleanup for unpinned items.
 - Optional image history for screenshots and image clipboard payloads.
 - Optional file history for file paths copied from Windows Explorer.
-- Local-only persistence under Electron `userData`; no sync service or telemetry is included.
+- Local-only Brotli-compressed persistence with a configurable storage directory; no sync service or telemetry is included.
 - Tray-first behavior: closing the window hides it to the system tray.
 - Startup registration for the current Windows user without administrator privileges.
 - Global shortcut support, defaulting to `Alt + V`.
 - Compact custom title bar with native window controls and no traditional menu bar.
 - Theme accent switching: Mint, Blue, Violet, Rose, and Amber.
-- Data management tools for JSON import/export, retention days, category cleanup, and store size visibility.
+- Data management tools for JSON import/export, retention days, category cleanup, store size visibility, and storage location changes.
 
 ## Download
 
@@ -57,6 +57,7 @@ Open the settings panel from the top-right toolbar.
 | Global shortcut | `Alt + V` | Re-registers when changed. |
 | Appearance | System | Supports system, light, and dark modes. |
 | Theme accent | Mint | Changes chrome, focus, switch, and selected item accents. |
+| Storage location | Electron `userData` | Stores `lightclip-store.json.br`; can be moved from settings. |
 
 ## Keyboard Shortcuts
 
@@ -82,12 +83,20 @@ See [Privacy And Data Handling](docs/PRIVACY.md) for the full policy.
 
 ## Data Location
 
-LightClip stores data in the current user's Electron `userData` directory. You can open it from the tray menu.
+LightClip stores data in the current user's Electron `userData` directory by default. You can open or change the active storage directory from Settings.
 
 Primary data file:
 
 ```text
-lightclip-store.json
+lightclip-store.json.br
+```
+
+The store uses Brotli compression at maximum quality. Older `lightclip-store.json` files are read and migrated to the compressed file automatically.
+
+Custom storage directory configuration remains in Electron `userData`:
+
+```text
+lightclip-storage.json
 ```
 
 ## Development

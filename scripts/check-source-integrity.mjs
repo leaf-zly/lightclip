@@ -22,6 +22,14 @@ const criticalSources = [
     path: 'src/renderer/src/utils.ts',
     requiredTokens: ['export function formatRelativeTime', 'export function describeItem', 'export function matchesQuery'],
   },
+  {
+    path: 'src/main/store.ts',
+    requiredTokens: ['lightclip-store.json.br', 'brotliCompress', 'moveStorageDirectory'],
+  },
+  {
+    path: 'src/main/index.ts',
+    requiredTokens: ['selectStorageDirectory', 'resetStorageDirectory', 'openStorageDirectory'],
+  },
 ]
 
 /**

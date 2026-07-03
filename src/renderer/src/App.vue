@@ -91,6 +91,9 @@ const historyFilters: readonly HistoryFilterOption[] = [
 const state = ref<AppState>({
   items: [],
   storageBytes: 0,
+  storageDirectory: '',
+  storageFilePath: '',
+  storageCompression: 'brotli',
   settings: {
     captureEnabled: true,
     capturePausedUntil: null,
@@ -169,6 +172,8 @@ const activeFilterLabel = computed(
   () => historyFilters.find((filter) => filter.id === activeFilter.value)?.label ?? historyFilters[0].label,
 )
 const storageLabel = computed(() => formatBytes(state.value.storageBytes))
+const storageCompressionLabel = computed(() => (state.value.storageCompression === 'brotli' ? 'Brotli 压缩' : '未压缩'))
+const storagePathLabel = computed(() => state.value.storageFilePath || '默认数据目录')
 const quickThemeLabel = computed(() => (state.value.settings.themeMode === 'dark' ? '切换浅色' : '切换暗黑'))
 const shellClasses = computed(() => [
   `theme-${state.value.settings.themeAccent}`,
@@ -280,6 +285,28 @@ async function importHistory(): Promise<void> {
   if (result.data) {
     showToast(`已导入 ${result.data.importedCount} 条记录`)
   }
+}
+
+async function openStorageDirectory(): Promise<void> {
+  const result = await window.lightClip.openStorageDirectory()
+  showToast(result.ok ? '已打开存储目录' : result.error ?? '打开失败')
+}
+
+async function selectStorageDirectory(): Promise<void> {
+  const result = await window.lightClip.selectStorageDirectory()
+  if (!result.ok) {
+    showToast(result.error ?? '切换失败')
+    return
+  }
+
+  if (result.data) {
+    showToast('已切换存储位置')
+  }
+}
+
+async function resetStorageDirectory(): Promise<void> {
+  const result = await window.lightClip.resetStorageDirectory()
+  showToast(result.ok ? '已恢复默认存储位置' : result.error ?? '恢复失败')
 }
 
 async function pauseCapture(minutes = DEFAULT_PAUSE_MINUTES): Promise<void> {
@@ -604,7 +631,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         <div class="setting-row data-row">
           <div>
             <strong>数据管理</strong>
-            <span>{{ storageLabel }} · 导出/导入本机 JSON 备份</span>
+            <span>{{ storageLabel }} · {{ storageCompressionLabel }} · 导出/导入本机 JSON 备份</span>
           </div>
           <div class="setting-actions">
             <button class="text-button" type="button" title="导出历史" @click="exportHistory">
@@ -614,6 +641,27 @@ function handleKeyboard(event: KeyboardEvent): void {
             <button class="text-button" type="button" title="导入历史" @click="importHistory">
               <Upload :size="16" />
               导入
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-row storage-row">
+          <div>
+            <strong>存储位置</strong>
+            <span class="storage-path" :title="state.storageFilePath">{{ storagePathLabel }}</span>
+          </div>
+          <div class="setting-actions">
+            <button class="text-button" type="button" title="打开存储目录" @click="openStorageDirectory">
+              <FolderOpen :size="16" />
+              打开
+            </button>
+            <button class="text-button" type="button" title="更改存储目录" @click="selectStorageDirectory">
+              <FolderOpen :size="16" />
+              更改
+            </button>
+            <button class="text-button" type="button" title="恢复默认目录" @click="resetStorageDirectory">
+              <RotateCcw :size="16" />
+              默认
             </button>
           </div>
         </div>

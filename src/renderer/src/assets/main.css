@@ -901,6 +901,10 @@ kbd {
     align-items: flex-start;
   }
 
+  .storage-path {
+    max-width: calc(100vw - 72px);
+  }
+
   .segmented-control {
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -1006,8 +1010,20 @@ kbd {
   border-radius: 999px;
 }
 
-.data-row {
+.data-row,
+.storage-row {
   align-items: center;
+}
+
+.storage-row > div:first-child {
+  min-width: 0;
+}
+
+.storage-path {
+  max-width: min(420px, 52vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .setting-actions,

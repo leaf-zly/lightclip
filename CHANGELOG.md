@@ -8,6 +8,26 @@ This project follows semantic versioning while it remains in early development. 
 
 No unreleased changes yet.
 
+## [0.1.4] - 2026-07-03
+
+### Added
+
+- Added Brotli-compressed local storage using compact JSON and maximum compression quality.
+- Added settings controls to open, change, and reset the active storage directory.
+- Added automatic migration from legacy `lightclip-store.json` to `lightclip-store.json.br`.
+- Expanded source integrity checks to cover the storage and main-process IPC layers.
+
+### Fixed
+
+- Cleaned legacy development startup entries that could launch Electron's default welcome window.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup and compressed-store smoke check.
+
 ## [0.1.3] - 2026-07-02
 
 ### Added
@@ -70,6 +90,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[0.1.4]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.4
 [0.1.3]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.3
 [0.1.2]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.2
 [0.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.1

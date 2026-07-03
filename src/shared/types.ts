@@ -10,6 +10,11 @@ export type AppThemeAccent = 'mint' | 'blue' | 'violet' | 'rose' | 'amber'
  */
 export type AppThemeMode = 'system' | 'light' | 'dark'
 
+/**
+ * On-disk persistence encoding used for clipboard history.
+ */
+export type StorageCompression = 'brotli' | 'none'
+
 interface ClipboardItemBase {
   /** Stable generated identifier used by renderer operations. */
   id: string
@@ -107,6 +112,26 @@ export interface AppState {
   settings: AppSettings
   /** Current on-disk store size in bytes. */
   storageBytes: number
+  /** Directory containing the active LightClip store file. */
+  storageDirectory: string
+  /** Absolute path of the active LightClip store file. */
+  storageFilePath: string
+  /** Compression format used by the active store file. */
+  storageCompression: StorageCompression
+}
+
+/**
+ * Metadata returned after moving or resetting the storage location.
+ */
+export interface StorageLocationResult {
+  /** Directory containing the active LightClip store file. */
+  directory: string
+  /** Absolute path of the active LightClip store file. */
+  filePath: string
+  /** Current compressed store size in bytes. */
+  storageBytes: number
+  /** Compression format used by the active store file. */
+  compression: StorageCompression
 }
 
 /**
@@ -169,6 +194,9 @@ export const IPC_CHANNELS = {
   clearByKind: 'lightclip:clear-by-kind',
   exportHistory: 'lightclip:export-history',
   importHistory: 'lightclip:import-history',
+  selectStorageDirectory: 'lightclip:select-storage-directory',
+  resetStorageDirectory: 'lightclip:reset-storage-directory',
+  openStorageDirectory: 'lightclip:open-storage-directory',
   updateSettings: 'lightclip:update-settings',
   minimizeWindow: 'lightclip:minimize-window',
   toggleMaximizeWindow: 'lightclip:toggle-maximize-window',
@@ -199,6 +227,12 @@ export interface LightClipApi {
   exportHistory: () => Promise<CommandResult<HistoryExportResult>>
   /** Imports settings and history from a user-selected JSON file. */
   importHistory: () => Promise<CommandResult<HistoryImportResult>>
+  /** Moves the compressed store file to a user-selected directory. */
+  selectStorageDirectory: () => Promise<CommandResult<StorageLocationResult>>
+  /** Moves the compressed store file back to Electron's default user data directory. */
+  resetStorageDirectory: () => Promise<CommandResult<StorageLocationResult>>
+  /** Opens the active storage directory in the operating system file manager. */
+  openStorageDirectory: () => Promise<CommandResult>
   /** Persists a partial settings update. */
   updateSettings: (settings: Partial<AppSettings>) => Promise<CommandResult<AppSettings>>
   /** Minimizes the quick panel window. */
