@@ -2,11 +2,11 @@
 
 LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> Current release: `v0.1.4`. This version adds Brotli-compressed storage, configurable storage location, and startup-entry cleanup while keeping the history management tools from `v0.1.3`.
+> Current release: `v1.0.0`. This is the first stable LightClip release, bundling search, preview, opt-in image/file history, theme controls, Brotli-compressed storage, configurable data location, and startup-entry cleanup.
 
 ## Project Status
 
-LightClip is in early public development. The core text clipboard workflow is usable, while image and file history are opt-in features that should be enabled only when you are comfortable storing that data locally.
+LightClip is stable for the local Windows clipboard-history workflow. Image and file history remain opt-in features that should be enabled only when you are comfortable storing that data locally.
 
 ## Features
 

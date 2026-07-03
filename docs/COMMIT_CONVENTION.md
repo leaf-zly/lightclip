@@ -1,6 +1,6 @@
 # Commit Convention
 
-LightClip uses Conventional Commits for commit history from `v0.1.3` onward.
+LightClip uses Conventional Commits for maintainable release history.
 
 ## Format
 

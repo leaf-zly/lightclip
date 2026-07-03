@@ -2,7 +2,7 @@
 
 This roadmap lists practical extensions that fit LightClip's lightweight clipboard-history direction.
 
-## Completed In v0.1.3
+## Completed In v1.0.0
 
 - Larger preview on demand for text, image, and file history.
 - Filters for text, image, file, pinned, and all records.
@@ -10,6 +10,8 @@ This roadmap lists practical extensions that fit LightClip's lightweight clipboa
 - Retention days for old non-pinned records.
 - JSON import/export and store size visibility.
 - Temporary capture pause and shortcut reset controls.
+- Theme accent and light/dark appearance controls.
+- Brotli-compressed storage with configurable storage location.
 
 ## Near-Term
 

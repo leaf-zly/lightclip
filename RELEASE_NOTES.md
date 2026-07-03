@@ -1,17 +1,18 @@
-# LightClip v0.1.4
+# LightClip v1.0.0
 
 ## Highlights
 
-- Added Brotli-compressed local storage with compact JSON and maximum compression quality.
-- Added Settings controls to open, change, and reset the active storage directory.
-- Added automatic migration from legacy `lightclip-store.json` to `lightclip-store.json.br`.
-- Fixed legacy development startup entries that could open Electron's default welcome window.
-- Expanded build-time source integrity checks for storage and main-process IPC files.
+- First stable LightClip release.
+- Includes searchable text clipboard history, filters, pinning, preview, cleanup, import/export, and opt-in image/file history.
+- Includes theme accent switching, system/light/dark appearance, startup registration, and tray-first behavior.
+- Uses Brotli-compressed local storage with configurable storage location.
+- Migrates legacy `lightclip-store.json` stores to `lightclip-store.json.br` automatically.
+- Cleans legacy development startup entries that could open Electron's default welcome window.
 
 ## Download
 
-- `LightClip Setup 0.1.4.exe`: installer for daily use.
-- `LightClip 0.1.4.exe`: portable build that can run directly.
+- `LightClip Setup 1.0.0.exe`: installer for daily use.
+- `LightClip 1.0.0.exe`: portable build that can run directly.
 
 ## Verification
 

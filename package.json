@@ -1,6 +1,6 @@
 {
   "name": "lightclip-electron",
-  "version": "0.1.4",
+  "version": "1.0.0",
   "private": true,
   "description": "A lightweight and polished Windows clipboard history app.",
   "author": "qiang.tan",

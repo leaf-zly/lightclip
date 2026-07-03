@@ -2,13 +2,35 @@
 
 All notable changes to LightClip are documented in this file.
 
-This project follows semantic versioning while it remains in early development. Breaking changes may still occur before `1.0.0`, but they should be called out in release notes.
+This project follows semantic versioning. Breaking changes should be reserved for major versions and called out in release notes.
 
 ## Unreleased
 
 No unreleased changes yet.
 
-## [0.1.4] - 2026-07-03
+## [1.0.0] - 2026-07-03
+
+### Changed
+
+- Promoted the current LightClip build to the first stable `1.0.0` release.
+- Rebuilt Windows installer and portable assets with `1.0.0` package metadata.
+
+### Included
+
+- Text clipboard history with search, filters, pinning, preview, deletion, and cleanup tools.
+- Optional image and file history with local-only privacy defaults.
+- Theme accent and light/dark appearance controls.
+- Brotli-compressed local storage with configurable storage location.
+- Startup registration cleanup for legacy development entries.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+
+## 0.1.4 - 2026-07-03
 
 ### Added
 
@@ -28,7 +50,7 @@ No unreleased changes yet.
 - `pnpm dist`
 - Packaged startup and compressed-store smoke check.
 
-## [0.1.3] - 2026-07-02
+## 0.1.3 - 2026-07-02
 
 ### Added
 
@@ -50,7 +72,7 @@ No unreleased changes yet.
 - `pnpm dist`
 - Production Electron startup smoke check.
 
-## [0.1.2] - 2026-07-02
+## 0.1.2 - 2026-07-02
 
 ### Added
 
@@ -70,7 +92,7 @@ No unreleased changes yet.
 - `pnpm dist`
 - Production Electron startup smoke check.
 
-## [0.1.1] - 2026-07-02
+## 0.1.1 - 2026-07-02
 
 ### Fixed
 
@@ -79,7 +101,7 @@ No unreleased changes yet.
 - Cleaned old renderer assets during production builds.
 - Ensured normal double-click launches show the panel, while startup launches can remain hidden in the tray.
 
-## [0.1.0] - 2026-07-01
+## 0.1.0 - 2026-07-01
 
 ### Added
 
@@ -90,8 +112,4 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
-[0.1.4]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.4
-[0.1.3]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.3
-[0.1.2]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.2
-[0.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.1
-[0.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v0.1.0
+[1.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.0

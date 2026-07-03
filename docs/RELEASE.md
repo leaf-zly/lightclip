@@ -6,11 +6,9 @@ This document describes the expected release flow for LightClip maintainers.
 
 Use semantic versioning:
 
-- Patch: bug fixes, documentation, small polish.
-- Minor: new user-facing features that remain compatible.
-- Major: breaking changes after `1.0.0`.
-
-Before `1.0.0`, breaking changes can happen in minor versions, but they should be documented clearly.
+- Patch: bug fixes, documentation, and small polish.
+- Minor: backwards-compatible user-facing features.
+- Major: breaking changes that require migration guidance.
 
 ## Pre-Release Checklist
 
@@ -49,12 +47,12 @@ The `release/` directory is ignored by Git. Upload these files to GitHub Release
 Create a tag matching the package version:
 
 ```powershell
-gh release create v0.1.3 `
-  "release/LightClip Setup 0.1.3.exe" `
-  "release/LightClip Setup 0.1.3.exe.blockmap" `
-  "release/LightClip 0.1.3.exe" `
+gh release create v1.0.0 `
+  "release/LightClip Setup 1.0.0.exe" `
+  "release/LightClip Setup 1.0.0.exe.blockmap" `
+  "release/LightClip 1.0.0.exe" `
   "release/latest.yml" `
-  --title "LightClip v0.1.3" `
+  --title "LightClip v1.0.0" `
   --notes-file RELEASE_NOTES.md
 ```
 
@@ -76,8 +74,8 @@ Release notes should include:
 After publishing:
 
 ```powershell
-gh release view v0.1.3 --json name,tagName,url,assets
-git ls-remote --tags origin refs/tags/v0.1.3
+gh release view v1.0.0 --json name,tagName,url,assets
+git ls-remote --tags origin refs/tags/v1.0.0
 ```
 
 Confirm the release page contains all expected assets and that the tag points to the intended commit.
