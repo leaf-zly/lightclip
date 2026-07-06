@@ -359,6 +359,7 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
   const result = await window.lightClip.updateSettings(settings)
   if (!result.ok) {
     showToast(result.error ?? '设置保存失败')
+    state.value = await window.lightClip.getState()
   }
 }
 

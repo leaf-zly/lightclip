@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { brotliCompress, brotliDecompress, constants as zlibConstants } from 'node:zlib'
 import { promisify } from 'node:util'
@@ -19,6 +19,7 @@ import type {
 
 const STORE_VERSION = 1
 const STORE_FILE_NAME = 'lightclip-store.json.br'
+const BACKUP_STORE_FILE_NAME = `${STORE_FILE_NAME}.bak`
 const LEGACY_STORE_FILE_NAME = 'lightclip-store.json'
 const STORAGE_CONFIG_FILE_NAME = 'lightclip-storage.json'
 const STORE_COMPRESSION = 'brotli' as const
@@ -67,6 +68,7 @@ export class ClipboardStore {
   private readonly storageConfigPath: string
   private storageDirectory: string
   private filePath: string
+  private backupFilePath: string
   private legacyFilePath: string
   private state: PersistedStore
   private pendingWrite: Promise<void> = Promise.resolve()
@@ -76,6 +78,7 @@ export class ClipboardStore {
     this.storageConfigPath = join(this.defaultStorageDirectory, STORAGE_CONFIG_FILE_NAME)
     this.storageDirectory = this.defaultStorageDirectory
     this.filePath = join(this.storageDirectory, STORE_FILE_NAME)
+    this.backupFilePath = join(this.storageDirectory, BACKUP_STORE_FILE_NAME)
     this.legacyFilePath = join(this.storageDirectory, LEGACY_STORE_FILE_NAME)
     this.state = {
       version: STORE_VERSION,
@@ -102,6 +105,8 @@ export class ClipboardStore {
     } catch (error) {
       if (!isMissingFileError(error)) {
         console.warn('Failed to load LightClip store, using defaults.', error)
+        await this.quarantineUnreadableStoreFiles()
+        await this.save()
       }
     }
   }
@@ -154,14 +159,18 @@ export class ClipboardStore {
     }
 
     const previousFilePath = this.filePath
+    const previousBackupFilePath = this.backupFilePath
     const previousLegacyFilePath = this.legacyFilePath
     const nextFilePath = join(targetDirectory, STORE_FILE_NAME)
+    const nextBackupFilePath = join(targetDirectory, BACKUP_STORE_FILE_NAME)
 
-    await writeCompressedStoreFile(nextFilePath, JSON.stringify(this.state))
+    await writeCompressedStoreFile(nextFilePath, nextBackupFilePath, JSON.stringify(this.state))
+    await copyStoreBackup(previousFilePath, previousBackupFilePath, nextBackupFilePath)
     await this.writeStorageConfig(targetDirectory)
     this.setStorageDirectory(targetDirectory)
     await Promise.all([
       removeStoreFileIfDifferent(previousFilePath, this.filePath),
+      removeStoreFileIfDifferent(previousBackupFilePath, this.backupFilePath),
       removeStoreFileIfDifferent(previousLegacyFilePath, this.filePath),
     ])
 
@@ -480,14 +489,26 @@ export class ClipboardStore {
 
   private async readPersistedStore(): Promise<Partial<PersistedStore>> {
     if (existsSync(this.filePath)) {
-      const compressed = await readFile(this.filePath)
-      const raw = await decompressStorePayload(compressed)
-      return JSON.parse(raw) as Partial<PersistedStore>
+      try {
+        return await readCompressedStoreFile(this.filePath)
+      } catch (error) {
+        console.warn('Primary LightClip store is unreadable, trying backup store.', error)
+        if (existsSync(this.backupFilePath)) {
+          await renameIfExists(this.filePath, `${this.filePath}.corrupt-${Date.now().toString(36)}`)
+          return readCompressedStoreFile(this.backupFilePath)
+        }
+        throw error
+      }
     }
 
     if (existsSync(this.legacyFilePath)) {
       const raw = await readFile(this.legacyFilePath, 'utf8')
       return JSON.parse(raw) as Partial<PersistedStore>
+    }
+
+    if (existsSync(this.backupFilePath)) {
+      console.warn('Primary LightClip store is missing, restoring from backup store.')
+      return readCompressedStoreFile(this.backupFilePath)
     }
 
     const error = new Error('LightClip store file does not exist.') as NodeJS.ErrnoException
@@ -498,6 +519,7 @@ export class ClipboardStore {
   private setStorageDirectory(directory: string): void {
     this.storageDirectory = directory
     this.filePath = join(this.storageDirectory, STORE_FILE_NAME)
+    this.backupFilePath = join(this.storageDirectory, BACKUP_STORE_FILE_NAME)
     this.legacyFilePath = join(this.storageDirectory, LEGACY_STORE_FILE_NAME)
   }
 
@@ -515,6 +537,15 @@ export class ClipboardStore {
     await rm(this.legacyFilePath, { force: true })
   }
 
+  private async quarantineUnreadableStoreFiles(): Promise<void> {
+    const suffix = Date.now().toString(36)
+    await Promise.all([
+      renameIfExists(this.filePath, `${this.filePath}.corrupt-${suffix}`),
+      renameIfExists(this.backupFilePath, `${this.backupFilePath}.corrupt-${suffix}`),
+      renameIfExists(this.legacyFilePath, `${this.legacyFilePath}.corrupt-${suffix}`),
+    ])
+  }
+
   private ensureUniqueItemId(preferredId: string): string {
     if (preferredId && !this.state.items.some((item) => item.id === preferredId)) {
       return preferredId
@@ -529,21 +560,51 @@ export class ClipboardStore {
       .catch(() => undefined)
       .then(async () => {
         await mkdir(this.storageDirectory, { recursive: true })
-        await writeCompressedStoreFile(this.filePath, payload)
+        await writeCompressedStoreFile(this.filePath, this.backupFilePath, payload)
         await this.removeLegacyStoreFile()
       })
     await this.pendingWrite
   }
 }
 
-async function writeCompressedStoreFile(filePath: string, payload: string): Promise<void> {
+async function readCompressedStoreFile(filePath: string): Promise<Partial<PersistedStore>> {
+  const compressed = await readFile(filePath)
+  const raw = await decompressStorePayload(compressed)
+  return JSON.parse(raw) as Partial<PersistedStore>
+}
+
+async function writeCompressedStoreFile(filePath: string, backupFilePath: string, payload: string): Promise<void> {
   const tempFilePath = `${filePath}.${process.pid}.tmp`
+  const backupTempFilePath = `${backupFilePath}.${process.pid}.tmp`
   try {
-    await writeFile(tempFilePath, await compressStorePayload(payload))
+    const compressed = await compressStorePayload(payload)
+    await assertCompressedStorePayloadReadable(compressed)
+    await writeFile(tempFilePath, compressed)
+
+    // Preserve the last readable store before replacing the primary file.
+    if (existsSync(filePath)) {
+      await copyFile(filePath, backupTempFilePath)
+      await rename(backupTempFilePath, backupFilePath)
+    }
+
     await rename(tempFilePath, filePath)
   } catch (error) {
     await rm(tempFilePath, { force: true }).catch(() => undefined)
+    await rm(backupTempFilePath, { force: true }).catch(() => undefined)
     throw error
+  }
+}
+
+async function copyStoreBackup(primaryFilePath: string, backupFilePath: string, targetBackupFilePath: string): Promise<void> {
+  const sourcePath = existsSync(primaryFilePath) ? primaryFilePath : existsSync(backupFilePath) ? backupFilePath : null
+  if (!sourcePath) {
+    return
+  }
+
+  try {
+    await copyFile(sourcePath, targetBackupFilePath)
+  } catch (error) {
+    console.warn(`Failed to copy LightClip backup store to ${targetBackupFilePath}.`, error)
   }
 }
 
@@ -559,6 +620,22 @@ async function compressStorePayload(payload: string): Promise<Buffer> {
 async function decompressStorePayload(payload: Buffer): Promise<string> {
   const decompressed = await brotliDecompressAsync(payload)
   return decompressed.toString('utf8')
+}
+
+async function assertCompressedStorePayloadReadable(payload: Buffer): Promise<void> {
+  JSON.parse(await decompressStorePayload(payload))
+}
+
+async function renameIfExists(filePath: string, targetPath: string): Promise<void> {
+  if (!existsSync(filePath)) {
+    return
+  }
+
+  try {
+    await rename(filePath, targetPath)
+  } catch (error) {
+    console.warn(`Failed to quarantine unreadable LightClip store file: ${filePath}`, error)
+  }
 }
 
 async function ensureWritableDirectory(directory: string): Promise<void> {
@@ -636,6 +713,7 @@ function normalizePauseUntil(value: unknown): number | null {
 function isCaptureTemporarilyPaused(pausedUntil: number | null): boolean {
   return typeof pausedUntil === 'number' && pausedUntil > Date.now()
 }
+
 function normalizeThemeAccent(value: unknown): AppThemeAccent {
   return typeof value === 'string' && themeAccents.includes(value as AppThemeAccent)
     ? (value as AppThemeAccent)

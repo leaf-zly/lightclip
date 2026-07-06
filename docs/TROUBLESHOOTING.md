@@ -98,7 +98,7 @@ To reset local data:
 
 1. Quit LightClip from the tray.
 2. Open the active storage directory from Settings or the tray menu.
-3. Delete `lightclip-store.json.br`.
+3. Delete `lightclip-store.json.br`, `lightclip-store.json.br.bak`, and any `lightclip-store.json.br.corrupt-*` files.
 4. To also forget a custom storage directory, delete `lightclip-storage.json` from Electron `userData`.
 5. Start LightClip again.
 

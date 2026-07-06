@@ -13,6 +13,12 @@ This roadmap lists practical extensions that fit LightClip's lightweight clipboa
 - Theme accent and light/dark appearance controls.
 - Brotli-compressed storage with configurable storage location.
 
+## Completed In v1.0.1
+
+- Last-known-readable store backup and startup recovery.
+- Corrupt store quarantine before clean-store recreation.
+- Safer global shortcut registration with failed-save rollback.
+
 ## Near-Term
 
 - Richer search:

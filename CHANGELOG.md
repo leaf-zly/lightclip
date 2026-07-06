@@ -8,6 +8,27 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.0.1] - 2026-07-06
+
+### Added
+
+- Added last-known-readable backup storage at `lightclip-store.json.br.bak`.
+- Added startup recovery from the backup store when the primary compressed store is missing or unreadable.
+- Added unreadable store quarantine using `.corrupt-*` suffixes before recreating a clean store.
+
+### Fixed
+
+- Prevented unavailable or invalid global shortcuts from being persisted.
+- Restored the previous shortcut when a new shortcut cannot be registered.
+- Refreshed renderer settings after failed setting saves so inputs match the persisted state.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+
 ## [1.0.0] - 2026-07-03
 
 ### Changed
@@ -112,4 +133,5 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.1
 [1.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.0

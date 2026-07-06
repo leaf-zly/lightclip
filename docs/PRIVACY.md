@@ -32,6 +32,8 @@ lightclip-store.json.br
 
 You can open the data directory from the tray menu or Settings. Older uncompressed stores are migrated automatically.
 
+LightClip may also keep `lightclip-store.json.br.bak` and `.corrupt-*` recovery files in the active storage directory. These files can contain the same clipboard data as the primary store and should be treated as private.
+
 ## What Is Not Stored
 
 LightClip does not intentionally store:

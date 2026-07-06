@@ -38,11 +38,13 @@ const store = new ClipboardStore()
 const appIconPath = getAppIconPath()
 const WINDOWS_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
 const LIGHTCLIP_STARTUP_ENTRY_NAMES = ['electron.app.Electron', 'electron.app.LightClip']
+const FALLBACK_GLOBAL_SHORTCUT = 'Alt+V'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let clipboardTimer: NodeJS.Timeout | null = null
 let lastClipboardSignature = ''
+let activeGlobalShortcut = ''
 let isQuitting = false
 
 interface ClipboardSnapshot {
@@ -67,7 +69,7 @@ async function bootstrap(): Promise<void> {
   Menu.setApplicationMenu(null)
   createTray()
   createWindow()
-  registerGlobalShortcut(store.getState().settings.globalShortcut)
+  await registerStoredGlobalShortcut()
   startClipboardWatcher()
 
   if (!shouldStartHidden()) {
@@ -246,21 +248,55 @@ function updateTrayMenu(): void {
 
 
 /**
+ * Registers the persisted shortcut, falling back once to the default shortcut
+ * when an older or externally occupied accelerator cannot be used.
+ */
+async function registerStoredGlobalShortcut(): Promise<void> {
+  const { globalShortcut: configuredShortcut } = store.getState().settings
+  if (registerGlobalShortcut(configuredShortcut)) {
+    return
+  }
+
+  if (configuredShortcut === FALLBACK_GLOBAL_SHORTCUT || !registerGlobalShortcut(FALLBACK_GLOBAL_SHORTCUT)) {
+    return
+  }
+
+  await store.updateSettings({ globalShortcut: FALLBACK_GLOBAL_SHORTCUT }).catch((error) => {
+    console.warn('Failed to persist fallback global shortcut.', error)
+  })
+}
+
+/**
  * Registers or replaces the global shortcut used to toggle the quick panel.
  */
-function registerGlobalShortcut(accelerator: string): void {
-  globalShortcut.unregisterAll()
-  const registered = globalShortcut.register(accelerator, () => {
-    if (mainWindow?.isVisible()) {
-      hidePanel()
-    } else {
-      showPanel()
-    }
-  })
-
-  if (!registered) {
-    console.warn(`Unable to register global shortcut: ${accelerator}`)
+function registerGlobalShortcut(accelerator: string): boolean {
+  const normalizedAccelerator = accelerator.trim()
+  if (!normalizedAccelerator) {
+    console.warn('Unable to register empty global shortcut.')
+    return false
   }
+
+  globalShortcut.unregisterAll()
+  try {
+    const registered = globalShortcut.register(normalizedAccelerator, () => {
+      if (mainWindow?.isVisible()) {
+        hidePanel()
+      } else {
+        showPanel()
+      }
+    })
+
+    if (registered) {
+      activeGlobalShortcut = normalizedAccelerator
+      return true
+    }
+  } catch (error) {
+    console.warn(`Unable to register global shortcut: ${normalizedAccelerator}`, error)
+  }
+
+  activeGlobalShortcut = ''
+  console.warn(`Unable to register global shortcut: ${normalizedAccelerator}`)
+  return false
 }
 
 /**
@@ -467,17 +503,31 @@ function isDevelopmentElectronStartupCommand(command: string): boolean {
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
-  const previousShortcut = store.getState().settings.globalShortcut
-  const nextSettings = await store.updateSettings(settings)
-  applyLaunchAtLogin(nextSettings.launchAtLogin)
+  const previousSettings = store.getState().settings
+  const requestedShortcut = typeof settings.globalShortcut === 'string' ? settings.globalShortcut.trim() : undefined
+  const shortcutChanged = Boolean(requestedShortcut && requestedShortcut !== previousSettings.globalShortcut)
 
-  if (nextSettings.globalShortcut !== previousShortcut) {
-    registerGlobalShortcut(nextSettings.globalShortcut)
+  if (settings.globalShortcut !== undefined && !requestedShortcut) {
+    throw new Error('快捷键不能为空，例如 Alt+V')
   }
 
-  updateTrayMenu()
-  broadcastState()
-  return nextSettings
+  if (shortcutChanged && requestedShortcut && !registerGlobalShortcut(requestedShortcut)) {
+    registerGlobalShortcut(previousSettings.globalShortcut)
+    throw new Error(`快捷键 ${requestedShortcut} 不可用或已被占用，请换一个组合`)
+  }
+
+  try {
+    const nextSettings = await store.updateSettings(settings)
+    applyLaunchAtLogin(nextSettings.launchAtLogin)
+    updateTrayMenu()
+    broadcastState()
+    return nextSettings
+  } catch (error) {
+    if (shortcutChanged && activeGlobalShortcut !== previousSettings.globalShortcut) {
+      registerGlobalShortcut(previousSettings.globalShortcut)
+    }
+    throw error
+  }
 }
 
 function broadcastState(): void {
