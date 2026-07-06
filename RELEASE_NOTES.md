@@ -1,16 +1,16 @@
-# LightClip v1.2.3
+# LightClip v1.2.4
 
 ## Highlights
 
-- Paste-after-copy now uses a warm lightweight Windows Script Host helper instead of launching PowerShell for every paste.
-- Automatic paste delivery is asynchronous, so it no longer blocks the Electron main process.
-- The helper starts only when paste-after-copy is enabled and is stopped when the setting is disabled or the app exits.
-- The quick panel still hides immediately after selecting a history item.
+- Paste-after-copy now captures the foreground window before the LightClip panel opens.
+- The captured window is reactivated before `Ctrl + V` is sent, so automatic paste targets the app you were using.
+- The warm helper now uses Win32 APIs for capture, restore, and paste delivery through a single stdin command loop.
+- The quick panel still hides immediately after selecting a history item, and paste delivery remains asynchronous.
 
 ## Download
 
-- `LightClip Setup 1.2.3.exe`: installer for daily use.
-- `LightClip 1.2.3.exe`: portable build that can run directly.
+- `LightClip Setup 1.2.4.exe`: installer for daily use.
+- `LightClip 1.2.4.exe`: portable build that can run directly.
 
 ## Verification
 
@@ -18,7 +18,7 @@
 - `pnpm build`
 - `pnpm dist`
 - Packaged startup and compressed-store smoke check.
-- Paste helper quit smoke check.
+- Paste helper capture/quit smoke check.
 
 ## Notes
 

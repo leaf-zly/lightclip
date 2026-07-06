@@ -42,36 +42,107 @@ const LIGHTCLIP_STARTUP_ENTRY_NAMES = ['electron.app.Electron', 'electron.app.Li
 const FALLBACK_GLOBAL_SHORTCUT = 'Alt+V'
 const RELEASE_API_URL = 'https://api.github.com/repos/leaf-zly/lightclip/releases/latest'
 const RELEASE_URL_PREFIX = 'https://github.com/leaf-zly/lightclip/'
-const PASTE_HELPER_FILE_NAME = 'lightclip-paste-helper.vbs'
+const PASTE_HELPER_FILE_NAME = 'lightclip-paste-helper.ps1'
 /**
- * Small Windows Script Host program kept warm while paste-after-copy is enabled.
- * It avoids launching PowerShell for every paste and keeps the visible interaction path responsive.
+ * Warm PowerShell helper used by paste-after-copy.
+ * It captures/restores the target foreground window and sends Ctrl+V without spawning a new shell for every paste.
  */
-const PASTE_HELPER_SCRIPT = [
-  'Option Explicit',
-  'Dim shell, command',
-  'Set shell = CreateObject("WScript.Shell")',
-  'If WScript.Arguments.Count > 0 Then',
-  '  If LCase(WScript.Arguments(0)) = "--once" Then',
-  '    WScript.Sleep 180',
-  '    shell.SendKeys "^v"',
-  '    WScript.Quit 0',
-  '  End If',
-  'End If',
-  'Do',
-  '  On Error Resume Next',
-  '  command = WScript.StdIn.ReadLine',
-  '  If Err.Number <> 0 Then WScript.Quit 0',
-  '  On Error GoTo 0',
-  '  command = LCase(Trim(command))',
-  '  If command = "quit" Then WScript.Quit 0',
-  '  If command = "paste" Then',
-  '    WScript.Sleep 180',
-  '    shell.SendKeys "^v"',
-  '    WScript.StdOut.WriteLine "ok"',
-  '  End If',
-  'Loop',
-].join('\r\n')
+const PASTE_HELPER_SCRIPT = String.raw`param([string] $OnceTargetWindow = '')
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+$memberDefinition = @(
+  '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+  '[DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);',
+  '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);',
+  '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);',
+  '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);'
+) -join ' '
+Add-Type -Namespace LightClip -Name NativeMethods -MemberDefinition $memberDefinition
+$script:SW_RESTORE = 9
+$script:VK_MENU = 0x12
+$script:KEYEVENTF_KEYUP = 0x2
+
+function Write-LightClipResponse {
+  param([string] $RequestId, [string] $Status, [string] $Payload = '')
+  $safePayload = $Payload -replace '\r', ' ' -replace '\n', ' ' -replace '\|', '/'
+  [Console]::Out.WriteLine($RequestId + '|' + $Status + '|' + $safePayload)
+  [Console]::Out.Flush()
+}
+
+function Get-LightClipForegroundWindow {
+  return [LightClip.NativeMethods]::GetForegroundWindow().ToInt64().ToString()
+}
+
+function Invoke-LightClipActivateWindow {
+  param([string] $WindowHandle)
+  [int64] $handleValue = 0
+  if (-not [Int64]::TryParse($WindowHandle, [ref] $handleValue) -or $handleValue -le 0) {
+    return
+  }
+
+  $windowHandle = [IntPtr]::new($handleValue)
+  if (-not [LightClip.NativeMethods]::IsWindow($windowHandle)) {
+    return
+  }
+
+  [void] [LightClip.NativeMethods]::ShowWindowAsync($windowHandle, $script:SW_RESTORE)
+  Start-Sleep -Milliseconds 40
+  [LightClip.NativeMethods]::keybd_event($script:VK_MENU, 0, 0, [UIntPtr]::Zero)
+  [LightClip.NativeMethods]::keybd_event($script:VK_MENU, 0, $script:KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+  [void] [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)
+}
+
+function Invoke-LightClipPaste {
+  param([string] $WindowHandle)
+  Invoke-LightClipActivateWindow $WindowHandle
+  Start-Sleep -Milliseconds 120
+  [System.Windows.Forms.SendKeys]::SendWait('^v')
+}
+
+if ($OnceTargetWindow -ne '') {
+  Invoke-LightClipPaste $OnceTargetWindow
+  exit 0
+}
+
+[Console]::Out.WriteLine('ready|ok|')
+[Console]::Out.Flush()
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($null -eq $line) {
+    exit 0
+  }
+
+  $parts = $line -split '\|', 3
+  if ($parts.Length -lt 2) {
+    continue
+  }
+
+  $requestId = $parts[0]
+  $command = $parts[1].Trim().ToLowerInvariant()
+  $payload = if ($parts.Length -ge 3) { $parts[2] } else { '' }
+
+  try {
+    switch ($command) {
+      'capture' {
+        Write-LightClipResponse $requestId 'ok' (Get-LightClipForegroundWindow)
+      }
+      'paste' {
+        Invoke-LightClipPaste $payload
+        Write-LightClipResponse $requestId 'ok' ''
+      }
+      'quit' {
+        Write-LightClipResponse $requestId 'ok' ''
+        exit 0
+      }
+      default {
+        Write-LightClipResponse $requestId 'error' ('Unknown command: ' + $command)
+      }
+    }
+  } catch {
+    Write-LightClipResponse $requestId 'error' $_.Exception.Message
+  }
+}
+`
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -82,6 +153,10 @@ let isQuitting = false
 let pasteHelperProcess: ChildProcessWithoutNullStreams | null = null
 let pasteHelperStartPromise: Promise<void> | null = null
 let pasteHelperScriptPath: string | null = null
+let pasteHelperStdoutBuffer = ''
+let pasteHelperRequestId = 0
+let pasteTargetWindowHandle: string | null = null
+const pasteHelperRequests = new Map<number, PasteHelperRequest>()
 
 interface ClipboardSnapshot {
   signature: string
@@ -103,6 +178,12 @@ interface ClipboardWriteMetadata {
   signature: string
 }
 
+interface PasteHelperRequest {
+  resolve: (payload: string) => void
+  reject: (error: Error) => void
+  timeout: NodeJS.Timeout
+}
+
 /**
  * Application bootstrap. Loads state, registers OS integrations, then opens the quick panel.
  */
@@ -118,7 +199,7 @@ async function bootstrap(): Promise<void> {
   syncPasteHelperProcess(store.getState().settings.pasteAfterCopy)
 
   if (!shouldStartHidden()) {
-    showPanel()
+    await showPanel()
   }
 }
 
@@ -129,7 +210,7 @@ if (!singleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    showPanel()
+    void showPanel()
   })
 
   app.whenReady().then(bootstrap).catch((error) => {
@@ -199,7 +280,8 @@ function createWindow(): BrowserWindow {
 /**
  * Shows the quick panel near the active display, similar to a launcher.
  */
-function showPanel(): void {
+async function showPanel(): Promise<void> {
+  await rememberPasteTargetWindow()
   const window = createWindow()
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
@@ -247,7 +329,9 @@ function createTray(): void {
 
   tray = new Tray(createTrayImage())
   tray.setToolTip('LightClip')
-  tray.on('click', showPanel)
+  tray.on('click', () => {
+    void showPanel()
+  })
   updateTrayMenu()
 }
 
@@ -258,7 +342,12 @@ function updateTrayMenu(): void {
 
   const { settings } = store.getState()
   const menu = Menu.buildFromTemplate([
-    { label: '打开 LightClip', click: showPanel },
+    {
+      label: '打开 LightClip',
+      click: () => {
+        void showPanel()
+      },
+    },
     {
       label: settings.captureEnabled ? '暂停记录' : '恢复记录',
       click: () => {
@@ -291,7 +380,6 @@ function updateTrayMenu(): void {
   ])
   tray.setContextMenu(menu)
 }
-
 
 /**
  * Registers the persisted shortcut, falling back once to the default shortcut
@@ -328,7 +416,7 @@ function registerGlobalShortcut(accelerator: string): boolean {
       if (mainWindow?.isVisible()) {
         hidePanel()
       } else {
-        showPanel()
+        void showPanel()
       }
     })
 
@@ -762,28 +850,29 @@ function syncPasteHelperProcess(enabled: boolean): void {
   stopPasteHelperProcess()
 }
 
-async function sendPasteCommandToForegroundApp(): Promise<void> {
+async function rememberPasteTargetWindow(): Promise<void> {
+  pasteTargetWindowHandle = null
+  if (process.platform !== 'win32' || !store.getState().settings.pasteAfterCopy) {
+    return
+  }
+
   try {
-    await ensurePasteHelperProcess()
-    const helper = pasteHelperProcess
-    if (!helper || helper.killed || !helper.stdin.writable) {
-      await runOneShotPasteHelper()
-      return
-    }
+    const windowHandle = await sendPasteHelperCommand('capture', '', 500)
+    pasteTargetWindowHandle = isValidWindowHandle(windowHandle) ? windowHandle : null
+  } catch (error) {
+    console.warn('Failed to capture paste target window.', error)
+  }
+}
 
-    await new Promise<void>((resolve, reject) => {
-      helper.stdin.write('paste\n', (error) => {
-        if (error) {
-          reject(error)
-          return
-        }
+async function sendPasteCommandToForegroundApp(): Promise<void> {
+  const targetWindowHandle = pasteTargetWindowHandle
+  pasteTargetWindowHandle = null
 
-        resolve()
-      })
-    })
+  try {
+    await sendPasteHelperCommand('paste', targetWindowHandle ?? '', 1500)
   } catch (error) {
     console.warn('Failed to send paste command through the warm helper.', error)
-    await runOneShotPasteHelper().catch((fallbackError) => {
+    await runOneShotPasteHelper(targetWindowHandle).catch((fallbackError) => {
       console.warn('Failed to paste into foreground app.', fallbackError)
     })
   }
@@ -803,14 +892,14 @@ async function ensurePasteHelperProcess(): Promise<void> {
     if (pasteHelperProcess && !pasteHelperProcess.killed && pasteHelperProcess.stdin.writable) {
       return
     }
-
-    const helper = spawn('cscript.exe', ['//B', '//Nologo', scriptPath], { windowsHide: true })
+    pasteHelperStdoutBuffer = ''
+    const helper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
+      windowsHide: true,
+    })
     pasteHelperProcess = helper
     helper.stdout.setEncoding('utf8')
     helper.stderr.setEncoding('utf8')
-    helper.stdout.on('data', () => {
-      // Drain acknowledgements so the helper pipe cannot fill during long sessions.
-    })
+    helper.stdout.on('data', handlePasteHelperStdout)
     helper.stderr.on('data', (chunk) => {
       const message = chunk.toString().trim()
       if (message) {
@@ -821,14 +910,16 @@ async function ensurePasteHelperProcess(): Promise<void> {
       if (pasteHelperProcess === helper) {
         pasteHelperProcess = null
       }
+      rejectPasteHelperRequests(error instanceof Error ? error : new Error(String(error)))
       console.warn('Failed to start LightClip paste helper.', error)
     })
     helper.once('exit', (code, signal) => {
       if (pasteHelperProcess === helper) {
         pasteHelperProcess = null
       }
+      rejectPasteHelperRequests(new Error('Paste helper exited. code=' + (code ?? 'null') + ' signal=' + (signal ?? 'null')))
       if (!isQuitting && code !== 0) {
-        console.warn(`LightClip paste helper exited unexpectedly. code=${code ?? 'null'} signal=${signal ?? 'null'}`)
+        console.warn('LightClip paste helper exited unexpectedly. code=' + (code ?? 'null') + ' signal=' + (signal ?? 'null'))
       }
     })
   })()
@@ -861,7 +952,7 @@ function stopPasteHelperProcess(): void {
   }
 
   if (helper.stdin.writable) {
-    helper.stdin.end('quit\n')
+    helper.stdin.end(String(++pasteHelperRequestId) + '|quit|\n')
   }
 
   const killTimer = setTimeout(() => {
@@ -872,17 +963,22 @@ function stopPasteHelperProcess(): void {
   killTimer.unref()
 }
 
-async function runOneShotPasteHelper(): Promise<void> {
+async function runOneShotPasteHelper(targetWindowHandle: string | null): Promise<void> {
   const scriptPath = await ensurePasteHelperScript()
   await new Promise<void>((resolve, reject) => {
-    const helper = spawn('cscript.exe', ['//B', '//Nologo', scriptPath, '--once'], {
+    const args = ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]
+    if (targetWindowHandle) {
+      args.push('-OnceTargetWindow', targetWindowHandle)
+    }
+
+    const helper = spawn('powershell.exe', args, {
       stdio: 'ignore',
       windowsHide: true,
     })
     const killTimer = setTimeout(() => {
       helper.kill()
       reject(new Error('Paste helper timed out'))
-    }, 2500)
+    }, 3500)
     killTimer.unref()
 
     helper.once('error', (error) => {
@@ -892,13 +988,89 @@ async function runOneShotPasteHelper(): Promise<void> {
     helper.once('exit', (code) => {
       clearTimeout(killTimer)
       if (code && code !== 0) {
-        reject(new Error(`Paste helper exited with code ${code}`))
+        reject(new Error('Paste helper exited with code ' + code))
         return
       }
 
       resolve()
     })
   })
+}
+
+async function sendPasteHelperCommand(command: 'capture' | 'paste', payload = '', timeoutMs = 1000): Promise<string> {
+  await ensurePasteHelperProcess()
+  const helper = pasteHelperProcess
+  if (!helper || helper.killed || !helper.stdin.writable) {
+    throw new Error('Paste helper is not running')
+  }
+
+  const requestId = ++pasteHelperRequestId
+  return new Promise<string>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pasteHelperRequests.delete(requestId)
+      reject(new Error('Paste helper command timed out: ' + command))
+    }, timeoutMs)
+    timeout.unref()
+    pasteHelperRequests.set(requestId, { resolve, reject, timeout })
+
+    helper.stdin.write(String(requestId) + '|' + command + '|' + payload + '\n', (error) => {
+      if (error) {
+        clearTimeout(timeout)
+        pasteHelperRequests.delete(requestId)
+        reject(error)
+      }
+    })
+  })
+}
+
+function handlePasteHelperStdout(chunk: string | Buffer): void {
+  pasteHelperStdoutBuffer += chunk.toString()
+  let lineBreakIndex = pasteHelperStdoutBuffer.indexOf('\n')
+  while (lineBreakIndex >= 0) {
+    const line = pasteHelperStdoutBuffer.slice(0, lineBreakIndex).trim()
+    pasteHelperStdoutBuffer = pasteHelperStdoutBuffer.slice(lineBreakIndex + 1)
+    handlePasteHelperLine(line)
+    lineBreakIndex = pasteHelperStdoutBuffer.indexOf('\n')
+  }
+}
+
+function handlePasteHelperLine(line: string): void {
+  if (!line) {
+    return
+  }
+
+  if (line === 'ready|ok|') {
+    return
+  }
+
+  const [requestIdText, status, payload = ''] = line.split('|')
+  const requestId = Number.parseInt(requestIdText, 10)
+  const request = pasteHelperRequests.get(requestId)
+  if (!request) {
+    return
+  }
+
+  clearTimeout(request.timeout)
+  pasteHelperRequests.delete(requestId)
+  if (status === 'ok') {
+    request.resolve(payload)
+    return
+  }
+
+  request.reject(new Error(payload || 'Paste helper command failed'))
+}
+
+function rejectPasteHelperRequests(error: Error): void {
+  for (const [requestId, request] of pasteHelperRequests) {
+    clearTimeout(request.timeout)
+    pasteHelperRequests.delete(requestId)
+    request.reject(error)
+  }
+}
+
+function isValidWindowHandle(value: string): boolean {
+  const trimmed = value.trim()
+  return /^\d+$/.test(trimmed) && trimmed !== '0'
 }
 
 /**

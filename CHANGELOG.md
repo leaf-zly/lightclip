@@ -8,6 +8,22 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.2.4] - 2026-07-06
+
+### Fixed
+
+- Reworked paste-after-copy to capture the foreground window before the LightClip panel opens.
+- Reactivated the captured target window before sending `Ctrl + V`, fixing cases where the paste command had no visible effect.
+- Replaced the warm Windows Script Host helper with a warm PowerShell Win32 helper that can capture, restore, and paste through one stdin command loop.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+- Paste helper capture/quit smoke check.
+
 ## [1.2.3] - 2026-07-06
 
 ### Fixed
@@ -220,6 +236,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.2.4]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.4
 [1.2.3]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.3
 [1.2.2]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.2
 [1.2.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.1

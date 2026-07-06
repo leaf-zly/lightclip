@@ -2,7 +2,7 @@
 
 LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> Current release: `v1.2.3`. This patch makes paste-after-copy use a warm lightweight Windows helper so automatic paste delivery no longer waits on a new PowerShell process.
+> Current release: `v1.2.4`. This patch makes paste-after-copy remember the window that opened LightClip and reactivate it before sending `Ctrl + V`.
 
 ## Project Status
 
