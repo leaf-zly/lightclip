@@ -2,7 +2,7 @@
 
 LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> Current release: `v1.0.1`. This stability release adds automatic store backup recovery and safer global shortcut registration on top of the stable `v1.0.0` feature set.
+> Current release: `v1.1.0`. This privacy release adds OS-backed local store encryption, foreground app exclusions, and optional paste-after-select behavior.
 
 ## Project Status
 
@@ -15,6 +15,9 @@ LightClip is stable for the local Windows clipboard-history workflow. Image and 
 - Optional file history for file paths copied from Windows Explorer.
 - Local-only Brotli-compressed persistence with a configurable storage directory; no sync service or telemetry is included.
 - Automatic local backup recovery for the compressed store.
+- Optional Windows account-backed encryption for the local store.
+- Foreground app exclusions for password managers or other sensitive tools.
+- Optional paste-after-select behavior for faster reuse.
 - Tray-first behavior: closing the window hides it to the system tray.
 - Startup registration for the current Windows user without administrator privileges.
 - Global shortcut support, defaulting to `Alt + V`.
@@ -54,6 +57,9 @@ Open the settings panel from the top-right toolbar.
 | Startup | Off | Registers LightClip for the current Windows user. |
 | Image history | Off | Stores PNG data URLs locally; can increase data size quickly. |
 | File history | Off | Stores file paths, not file contents. |
+| Local encryption | On when available | Uses Electron safeStorage backed by the current Windows account. |
+| Excluded apps | Empty | Process names listed here are not captured when they are in the foreground. |
+| Paste after copy | Off | Sends `Ctrl + V` after selecting a history item. |
 | History limit | `300` | Applies to non-pinned records. |
 | Global shortcut | `Alt + V` | Re-registers when changed. |
 | Appearance | System | Supports system, light, and dark modes. |
@@ -92,7 +98,7 @@ Primary data file:
 lightclip-store.json.br
 ```
 
-The store uses Brotli compression at maximum quality. Older `lightclip-store.json` files are read and migrated to the compressed file automatically. LightClip also keeps `lightclip-store.json.br.bak` as a local last-known-readable backup and restores from it if the primary store becomes unreadable.
+The store uses Brotli compression at maximum quality. When Windows account-backed encryption is available and enabled, LightClip encrypts the compressed payload before writing it. Older `lightclip-store.json` files are read and migrated to the compressed store automatically. LightClip also keeps `lightclip-store.json.br.bak` as a local last-known-readable backup and restores from it if the primary store becomes unreadable.
 
 Custom storage directory configuration remains in Electron `userData`:
 

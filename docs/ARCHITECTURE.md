@@ -42,6 +42,8 @@ Data is written to `lightclip-store.json.br` in Electron `userData` by default. 
 
 Older `lightclip-store.json` files are still readable and are migrated to the compressed store on load. A custom storage directory is persisted separately in `lightclip-storage.json` under Electron `userData`, allowing the data file to move without losing the pointer to it.
 
+When `encryptStore` is enabled and Electron safeStorage is available, the Brotli payload is encrypted with OS account-backed storage before being written. The file path remains stable so old plain Brotli stores can be read and rewritten in encrypted form during normal saves.
+
 Before replacing the primary compressed store, LightClip copies the last readable store to `lightclip-store.json.br.bak`. On startup, the backup is used when the primary file is missing or unreadable. When both primary and backup stores are unreadable, they are quarantined with `.corrupt-*` suffixes and a clean store is recreated.
 
 The store normalizes settings and history records on load, update, and import so old stores receive new defaults safely. This is required for settings such as `themeAccent`, `themeMode`, `capturePausedUntil`, and `retentionDays` that were added after the initial release.
@@ -53,6 +55,7 @@ The main process polls the clipboard at a short interval and creates a stable si
 - Text is always read.
 - File paths are read only when file history is enabled.
 - Images are read only when image history is enabled.
+- Foreground app exclusions are checked before a changed clipboard payload is recorded.
 
 Capture order prefers richer enabled payloads:
 

@@ -94,6 +94,8 @@ const state = ref<AppState>({
   storageDirectory: '',
   storageFilePath: '',
   storageCompression: 'brotli',
+  storageEncrypted: false,
+  encryptionAvailable: false,
   settings: {
     captureEnabled: true,
     capturePausedUntil: null,
@@ -103,6 +105,9 @@ const state = ref<AppState>({
     maxTextLength: 20000,
     captureImages: false,
     captureFiles: false,
+    encryptStore: true,
+    excludedAppNames: [],
+    pasteAfterCopy: false,
     maxImageBytes: 5 * 1024 * 1024,
     maxFilePaths: 20,
     retentionDays: 0,
@@ -172,7 +177,13 @@ const activeFilterLabel = computed(
   () => historyFilters.find((filter) => filter.id === activeFilter.value)?.label ?? historyFilters[0].label,
 )
 const storageLabel = computed(() => formatBytes(state.value.storageBytes))
-const storageCompressionLabel = computed(() => (state.value.storageCompression === 'brotli' ? 'Brotli 压缩' : '未压缩'))
+const storageCompressionLabel = computed(() => {
+  if (state.value.storageCompression === 'safeStorageBrotli') {
+    return '系统加密 + Brotli'
+  }
+
+  return state.value.storageCompression === 'brotli' ? 'Brotli 压缩' : '未压缩'
+})
 const storagePathLabel = computed(() => state.value.storageFilePath || '默认数据目录')
 const quickThemeLabel = computed(() => (state.value.settings.themeMode === 'dark' ? '切换浅色' : '切换暗黑'))
 const shellClasses = computed(() => [
@@ -403,6 +414,18 @@ function filterCount(filter: HistoryFilterOption['id']): number {
   return typeCounts.value[filter]
 }
 
+function updateExcludedAppNames(value: string): void {
+  const excludedAppNames = Array.from(
+    new Set(
+      value
+        .split(/[，,;；\n]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  )
+  updateSettings({ excludedAppNames })
+}
+
 function getKindLabel(kind: ClipboardItemKind): string {
   return kind === 'image' ? '图片' : kind === 'file' ? '文件' : '文本'
 }
@@ -627,6 +650,51 @@ function handleKeyboard(event: KeyboardEvent): void {
             />
             <span class="switch-track"></span>
           </label>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <strong>本地加密</strong>
+            <span>{{ state.encryptionAvailable ? '使用 Windows 账户级加密保护本机存储' : '当前系统暂不可用' }}</span>
+          </div>
+          <label class="switch" :class="{ disabled: !state.encryptionAvailable }">
+            <input
+              type="checkbox"
+              :checked="state.settings.encryptStore"
+              :disabled="!state.encryptionAvailable"
+              @change="updateSettings({ encryptStore: ($event.target as HTMLInputElement).checked })"
+            />
+            <span class="switch-track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <strong>复制后粘贴</strong>
+            <span>选择历史后自动粘贴到前台应用</span>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="state.settings.pasteAfterCopy"
+              @change="updateSettings({ pasteAfterCopy: ($event.target as HTMLInputElement).checked })"
+            />
+            <span class="switch-track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row exclusion-row">
+          <div>
+            <strong>排除应用</strong>
+            <span>这些进程在前台时不记录剪贴板</span>
+          </div>
+          <input
+            class="setting-text-input"
+            type="text"
+            :value="state.settings.excludedAppNames.join(', ')"
+            placeholder="Bitwarden, KeePass, 1Password"
+            @change="updateExcludedAppNames(($event.target as HTMLInputElement).value)"
+          />
         </div>
 
         <div class="setting-row data-row">

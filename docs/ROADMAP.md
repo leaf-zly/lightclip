@@ -19,22 +19,25 @@ This roadmap lists practical extensions that fit LightClip's lightweight clipboa
 - Corrupt store quarantine before clean-store recreation.
 - Safer global shortcut registration with failed-save rollback.
 
+## Completed In v1.1.0
+
+- Windows account-backed local store encryption.
+- Foreground app exclusions for sensitive apps.
+- Optional paste-after-select behavior.
+
 ## Near-Term
 
 - Richer search:
   - fuzzy matching for long snippets
   - saved filter presets
 - Safer capture controls:
-  - private-mode app exclusion list
   - one-click sensitive-content pause presets
 - Shortcut improvements:
   - validate shortcut conflicts more clearly
-  - optional paste-after-select behavior
 
 ## Mid-Term
 
 - Data management:
-  - encrypted local store option
   - cleanup suggestions for large image history
 - Preview improvements:
   - code/text formatting preservation

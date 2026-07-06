@@ -8,6 +8,27 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.1.0] - 2026-07-06
+
+### Added
+
+- Added Windows account-backed local store encryption through Electron safeStorage.
+- Added automatic migration from plain Brotli stores to encrypted Brotli stores when encryption is enabled and available.
+- Added foreground app exclusions so configured process names are not captured.
+- Added optional paste-after-select behavior that sends `Ctrl + V` after copying a history item.
+- Added settings controls for local encryption, excluded apps, and paste-after-select.
+
+### Changed
+
+- Updated storage status labels to distinguish plain Brotli from encrypted Brotli storage.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+
 ## [1.0.1] - 2026-07-06
 
 ### Added
@@ -133,5 +154,6 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.1.0
 [1.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.1
 [1.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.0

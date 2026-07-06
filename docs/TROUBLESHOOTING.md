@@ -53,6 +53,12 @@ Check:
 
 Include the configured shortcut in bug reports.
 
+## Encrypted Storage Cannot Be Opened
+
+Encrypted storage is tied to the Windows account that created it. If a store is moved to another account or Windows profile, disable encryption before moving it or export/import history with a private JSON backup.
+
+If the encrypted primary store is unreadable, LightClip tries `lightclip-store.json.br.bak` and quarantines unreadable files with a `.corrupt-*` suffix.
+
 ## Startup Does Not Work
 
 Check:

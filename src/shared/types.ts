@@ -13,7 +13,7 @@ export type AppThemeMode = 'system' | 'light' | 'dark'
 /**
  * On-disk persistence encoding used for clipboard history.
  */
-export type StorageCompression = 'brotli' | 'none'
+export type StorageCompression = 'safeStorageBrotli' | 'brotli' | 'none'
 
 interface ClipboardItemBase {
   /** Stable generated identifier used by renderer operations. */
@@ -88,6 +88,12 @@ export interface AppSettings {
   captureImages: boolean
   /** Whether file path lists from the clipboard should be stored locally. */
   captureFiles: boolean
+  /** Whether the local compressed store should be encrypted with OS account storage when available. */
+  encryptStore: boolean
+  /** Foreground process names that should never be captured from. */
+  excludedAppNames: string[]
+  /** Whether selecting a history item should paste into the previous foreground app after copying. */
+  pasteAfterCopy: boolean
   /** Maximum image PNG payload size accepted by the capture pipeline. */
   maxImageBytes: number
   /** Maximum number of file paths accepted by the capture pipeline. */
@@ -118,6 +124,10 @@ export interface AppState {
   storageFilePath: string
   /** Compression format used by the active store file. */
   storageCompression: StorageCompression
+  /** Whether the active store file is encrypted with OS account storage. */
+  storageEncrypted: boolean
+  /** Whether OS account storage encryption is available in the current runtime. */
+  encryptionAvailable: boolean
 }
 
 /**
@@ -132,6 +142,10 @@ export interface StorageLocationResult {
   storageBytes: number
   /** Compression format used by the active store file. */
   compression: StorageCompression
+  /** Whether the active store file is encrypted with OS account storage. */
+  encrypted: boolean
+  /** Whether OS account storage encryption is available in the current runtime. */
+  encryptionAvailable: boolean
 }
 
 /**

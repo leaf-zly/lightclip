@@ -324,6 +324,10 @@ function startClipboardWatcher(): void {
 async function recordClipboardSnapshot(snapshot: ClipboardSnapshot): Promise<ClipboardItem | null> {
   const { settings } = store.getState()
 
+  if (settings.excludedAppNames.length > 0 && isForegroundAppExcluded(settings.excludedAppNames)) {
+    return null
+  }
+
   if (settings.captureFiles && snapshot.files.length > 0) {
     return store.recordFiles(snapshot.files)
   }
@@ -426,6 +430,50 @@ function readFilePathsFromFormat(format: string, encoding: BufferEncoding): stri
     .split('\u0000')
     .map((path) => path.trim())
     .filter((path) => isAbsolute(path) && existsSync(path))
+}
+
+/**
+ * Checks the current foreground process against user-configured privacy exclusions.
+ */
+function isForegroundAppExcluded(excludedAppNames: string[]): boolean {
+  const foregroundProcessName = readForegroundProcessName()
+  if (!foregroundProcessName) {
+    return false
+  }
+
+  const normalizedForegroundName = normalizeProcessName(foregroundProcessName)
+  return excludedAppNames.some((appName) => normalizeProcessName(appName) === normalizedForegroundName)
+}
+
+function readForegroundProcessName(): string | null {
+  if (process.platform !== 'win32') {
+    return null
+  }
+
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    `Add-Type -Namespace LightClip -Name Foreground -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);'`,
+    '$hwnd = [LightClip.Foreground]::GetForegroundWindow()',
+    '[uint32]$processId = 0',
+    '[void][LightClip.Foreground]::GetWindowThreadProcessId($hwnd, [ref]$processId)',
+    'if ($processId -gt 0) { (Get-Process -Id $processId).ProcessName }',
+  ].join('; ')
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 2500,
+  })
+
+  if (result.error || result.status !== 0) {
+    console.warn('Failed to read foreground process name.', result.error ?? result.stderr)
+    return null
+  }
+
+  return result.stdout.trim() || null
+}
+
+function normalizeProcessName(value: string): string {
+  return value.trim().replace(/\.exe$/i, '').toLocaleLowerCase()
 }
 
 /**
@@ -573,8 +621,12 @@ ipcMain.handle(IPC_CHANNELS.copyItem, async (_event, id: string): Promise<Comman
   writeItemToClipboard(item)
   lastClipboardSignature = readClipboardSnapshot(store.getState().settings).signature
   const updated = await store.touchCopiedItem(id)
+  const { pasteAfterCopy } = store.getState().settings
   broadcastState()
   hidePanel()
+  if (pasteAfterCopy) {
+    pasteIntoForegroundApp()
+  }
   return { ok: true, data: updated ?? item }
 })
 
@@ -607,6 +659,23 @@ function writeItemToClipboard(item: ClipboardItem): void {
  * the built-in STA clipboard API exposed by System.Windows.Forms. The caller
  * falls back to text/HTML if this helper is unavailable.
  */
+function pasteIntoForegroundApp(): void {
+  if (process.platform !== 'win32') {
+    return
+  }
+
+  setTimeout(() => {
+    const script = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^v")'
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      windowsHide: true,
+      timeout: 3000,
+    })
+    if (result.error || result.status !== 0) {
+      console.warn('Failed to paste into foreground app.', result.error ?? result.stderr.toString())
+    }
+  }, 140)
+}
+
 function writeFileDropListToClipboard(paths: string[]): boolean {
   if (process.platform !== 'win32' || paths.length === 0) {
     return false

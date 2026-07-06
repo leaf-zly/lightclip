@@ -307,6 +307,7 @@ h1 {
 .text-button:focus-visible,
 .item-main:focus-visible,
 .setting-grid input:focus-visible,
+.setting-text-input:focus-visible,
 .theme-swatch:focus-visible,
 .segment-button:focus-visible {
   outline: 3px solid var(--accent-ring);
@@ -561,6 +562,11 @@ h1 {
   outline-offset: 3px;
 }
 
+.switch.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .setting-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -575,6 +581,17 @@ h1 {
 .setting-grid input {
   width: 100%;
   min-width: 0;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+}
+
+.setting-text-input {
+  width: min(340px, 100%);
+  min-width: 180px;
   padding: 9px 10px;
   color: var(--text);
   background: var(--surface);

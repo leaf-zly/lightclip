@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/
 import { dirname, join, resolve } from 'node:path'
 import { brotliCompress, brotliDecompress, constants as zlibConstants } from 'node:zlib'
 import { promisify } from 'node:util'
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import type {
   AppSettings,
   AppState,
@@ -23,6 +23,8 @@ const BACKUP_STORE_FILE_NAME = `${STORE_FILE_NAME}.bak`
 const LEGACY_STORE_FILE_NAME = 'lightclip-store.json'
 const STORAGE_CONFIG_FILE_NAME = 'lightclip-storage.json'
 const STORE_COMPRESSION = 'brotli' as const
+const ENCRYPTED_STORE_COMPRESSION = 'safeStorageBrotli' as const
+const ENCRYPTED_STORE_HEADER = Buffer.from('LightClipStoreSafeStorageV1\n', 'utf8')
 const brotliCompressAsync = promisify(brotliCompress)
 const brotliDecompressAsync = promisify(brotliDecompress)
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -40,6 +42,15 @@ interface StorageConfig {
   storageDirectory?: string | null
 }
 
+interface StoreReadResult {
+  store: Partial<PersistedStore>
+  encrypted: boolean
+}
+
+interface StoreWriteResult {
+  encrypted: boolean
+}
+
 const defaultSettings: AppSettings = {
   captureEnabled: true,
   capturePausedUntil: null,
@@ -49,6 +60,9 @@ const defaultSettings: AppSettings = {
   maxTextLength: 20000,
   captureImages: false,
   captureFiles: false,
+  encryptStore: true,
+  excludedAppNames: [],
+  pasteAfterCopy: false,
   maxImageBytes: 5 * 1024 * 1024,
   maxFilePaths: 20,
   retentionDays: 0,
@@ -71,6 +85,7 @@ export class ClipboardStore {
   private backupFilePath: string
   private legacyFilePath: string
   private state: PersistedStore
+  private storageEncrypted = false
   private pendingWrite: Promise<void> = Promise.resolve()
 
   constructor() {
@@ -121,7 +136,9 @@ export class ClipboardStore {
       storageBytes: this.getStorageBytes(),
       storageDirectory: this.storageDirectory,
       storageFilePath: this.filePath,
-      storageCompression: STORE_COMPRESSION,
+      storageCompression: this.storageEncrypted ? ENCRYPTED_STORE_COMPRESSION : STORE_COMPRESSION,
+      storageEncrypted: this.storageEncrypted,
+      encryptionAvailable: isStoreEncryptionAvailable(),
     }
   }
 
@@ -140,7 +157,9 @@ export class ClipboardStore {
       directory: this.storageDirectory,
       filePath: this.filePath,
       storageBytes: this.getStorageBytes(),
-      compression: STORE_COMPRESSION,
+      compression: this.storageEncrypted ? ENCRYPTED_STORE_COMPRESSION : STORE_COMPRESSION,
+      encrypted: this.storageEncrypted,
+      encryptionAvailable: isStoreEncryptionAvailable(),
     }
   }
 
@@ -164,7 +183,13 @@ export class ClipboardStore {
     const nextFilePath = join(targetDirectory, STORE_FILE_NAME)
     const nextBackupFilePath = join(targetDirectory, BACKUP_STORE_FILE_NAME)
 
-    await writeCompressedStoreFile(nextFilePath, nextBackupFilePath, JSON.stringify(this.state))
+    const writeResult = await writeCompressedStoreFile(
+      nextFilePath,
+      nextBackupFilePath,
+      JSON.stringify(this.state),
+      shouldEncryptStore(this.state.settings),
+    )
+    this.storageEncrypted = writeResult.encrypted
     await copyStoreBackup(previousFilePath, previousBackupFilePath, nextBackupFilePath)
     await this.writeStorageConfig(targetDirectory)
     this.setStorageDirectory(targetDirectory)
@@ -490,12 +515,16 @@ export class ClipboardStore {
   private async readPersistedStore(): Promise<Partial<PersistedStore>> {
     if (existsSync(this.filePath)) {
       try {
-        return await readCompressedStoreFile(this.filePath)
+        const result = await readCompressedStoreFile(this.filePath)
+        this.storageEncrypted = result.encrypted
+        return result.store
       } catch (error) {
         console.warn('Primary LightClip store is unreadable, trying backup store.', error)
         if (existsSync(this.backupFilePath)) {
           await renameIfExists(this.filePath, `${this.filePath}.corrupt-${Date.now().toString(36)}`)
-          return readCompressedStoreFile(this.backupFilePath)
+          const result = await readCompressedStoreFile(this.backupFilePath)
+          this.storageEncrypted = result.encrypted
+          return result.store
         }
         throw error
       }
@@ -503,12 +532,15 @@ export class ClipboardStore {
 
     if (existsSync(this.legacyFilePath)) {
       const raw = await readFile(this.legacyFilePath, 'utf8')
+      this.storageEncrypted = false
       return JSON.parse(raw) as Partial<PersistedStore>
     }
 
     if (existsSync(this.backupFilePath)) {
       console.warn('Primary LightClip store is missing, restoring from backup store.')
-      return readCompressedStoreFile(this.backupFilePath)
+      const result = await readCompressedStoreFile(this.backupFilePath)
+      this.storageEncrypted = result.encrypted
+      return result.store
     }
 
     const error = new Error('LightClip store file does not exist.') as NodeJS.ErrnoException
@@ -560,26 +592,37 @@ export class ClipboardStore {
       .catch(() => undefined)
       .then(async () => {
         await mkdir(this.storageDirectory, { recursive: true })
-        await writeCompressedStoreFile(this.filePath, this.backupFilePath, payload)
+        const result = await writeCompressedStoreFile(
+          this.filePath,
+          this.backupFilePath,
+          payload,
+          shouldEncryptStore(this.state.settings),
+        )
+        this.storageEncrypted = result.encrypted
         await this.removeLegacyStoreFile()
       })
     await this.pendingWrite
   }
 }
 
-async function readCompressedStoreFile(filePath: string): Promise<Partial<PersistedStore>> {
-  const compressed = await readFile(filePath)
-  const raw = await decompressStorePayload(compressed)
-  return JSON.parse(raw) as Partial<PersistedStore>
+async function readCompressedStoreFile(filePath: string): Promise<StoreReadResult> {
+  const encoded = await readFile(filePath)
+  const decoded = await decodeStorePayload(encoded)
+  return { store: JSON.parse(decoded.raw) as Partial<PersistedStore>, encrypted: decoded.encrypted }
 }
 
-async function writeCompressedStoreFile(filePath: string, backupFilePath: string, payload: string): Promise<void> {
+async function writeCompressedStoreFile(
+  filePath: string,
+  backupFilePath: string,
+  payload: string,
+  encrypt: boolean,
+): Promise<StoreWriteResult> {
   const tempFilePath = `${filePath}.${process.pid}.tmp`
   const backupTempFilePath = `${backupFilePath}.${process.pid}.tmp`
   try {
-    const compressed = await compressStorePayload(payload)
-    await assertCompressedStorePayloadReadable(compressed)
-    await writeFile(tempFilePath, compressed)
+    const encoded = await encodeStorePayload(payload, encrypt)
+    await assertStorePayloadReadable(encoded.payload)
+    await writeFile(tempFilePath, encoded.payload)
 
     // Preserve the last readable store before replacing the primary file.
     if (existsSync(filePath)) {
@@ -588,6 +631,7 @@ async function writeCompressedStoreFile(filePath: string, backupFilePath: string
     }
 
     await rename(tempFilePath, filePath)
+    return { encrypted: encoded.encrypted }
   } catch (error) {
     await rm(tempFilePath, { force: true }).catch(() => undefined)
     await rm(backupTempFilePath, { force: true }).catch(() => undefined)
@@ -608,6 +652,44 @@ async function copyStoreBackup(primaryFilePath: string, backupFilePath: string, 
   }
 }
 
+async function encodeStorePayload(payload: string, encrypt: boolean): Promise<{ payload: Buffer; encrypted: boolean }> {
+  const compressed = await compressStorePayload(payload)
+  if (!encrypt || !isStoreEncryptionAvailable()) {
+    return { payload: compressed, encrypted: false }
+  }
+
+  return {
+    payload: Buffer.concat([ENCRYPTED_STORE_HEADER, safeStorage.encryptString(compressed.toString('base64'))]),
+    encrypted: true,
+  }
+}
+
+async function decodeStorePayload(payload: Buffer): Promise<{ raw: string; encrypted: boolean }> {
+  if (!payload.subarray(0, ENCRYPTED_STORE_HEADER.length).equals(ENCRYPTED_STORE_HEADER)) {
+    return { raw: await decompressStorePayload(payload), encrypted: false }
+  }
+
+  if (!isStoreEncryptionAvailable()) {
+    throw new Error('LightClip encrypted store cannot be decrypted on this Windows account.')
+  }
+
+  const encryptedBody = payload.subarray(ENCRYPTED_STORE_HEADER.length)
+  const compressed = Buffer.from(safeStorage.decryptString(encryptedBody), 'base64')
+  return { raw: await decompressStorePayload(compressed), encrypted: true }
+}
+
+function isStoreEncryptionAvailable(): boolean {
+  try {
+    return safeStorage.isEncryptionAvailable()
+  } catch {
+    return false
+  }
+}
+
+function shouldEncryptStore(settings: AppSettings): boolean {
+  return Boolean(settings.encryptStore && isStoreEncryptionAvailable())
+}
+
 async function compressStorePayload(payload: string): Promise<Buffer> {
   return brotliCompressAsync(Buffer.from(payload, 'utf8'), {
     params: {
@@ -622,8 +704,8 @@ async function decompressStorePayload(payload: Buffer): Promise<string> {
   return decompressed.toString('utf8')
 }
 
-async function assertCompressedStorePayloadReadable(payload: Buffer): Promise<void> {
-  JSON.parse(await decompressStorePayload(payload))
+async function assertStorePayloadReadable(payload: Buffer): Promise<void> {
+  JSON.parse((await decodeStorePayload(payload)).raw)
 }
 
 async function renameIfExists(filePath: string, targetPath: string): Promise<void> {
@@ -686,6 +768,9 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     maxTextLength: clampInteger(settings.maxTextLength, 100, 200000),
     captureImages: Boolean(settings.captureImages),
     captureFiles: Boolean(settings.captureFiles),
+    encryptStore: Boolean(settings.encryptStore),
+    excludedAppNames: normalizeExcludedAppNames(settings.excludedAppNames),
+    pasteAfterCopy: Boolean(settings.pasteAfterCopy),
     maxImageBytes: clampInteger(settings.maxImageBytes, 128 * 1024, 100 * 1024 * 1024),
     maxFilePaths: clampInteger(settings.maxFilePaths, 1, 200),
     globalShortcut:
@@ -695,6 +780,14 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     themeAccent: normalizeThemeAccent(settings.themeAccent),
     themeMode: normalizeThemeMode(settings.themeMode),
   }
+}
+
+function normalizeExcludedAppNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return Array.from(new Set(value.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean))).slice(0, 100)
 }
 
 function normalizePauseUntil(value: unknown): number | null {

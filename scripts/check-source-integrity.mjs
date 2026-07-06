@@ -24,11 +24,11 @@ const criticalSources = [
   },
   {
     path: 'src/main/store.ts',
-    requiredTokens: ['lightclip-store.json.br', 'BACKUP_STORE_FILE_NAME', 'brotliCompress', 'moveStorageDirectory'],
+    requiredTokens: ['lightclip-store.json.br', 'BACKUP_STORE_FILE_NAME', 'safeStorage', 'brotliCompress', 'moveStorageDirectory'],
   },
   {
     path: 'src/main/index.ts',
-    requiredTokens: ['selectStorageDirectory', 'resetStorageDirectory', 'openStorageDirectory', 'registerStoredGlobalShortcut'],
+    requiredTokens: ['selectStorageDirectory', 'resetStorageDirectory', 'openStorageDirectory', 'registerStoredGlobalShortcut', 'readForegroundProcessName'],
   },
 ]
 

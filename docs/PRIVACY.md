@@ -34,6 +34,8 @@ You can open the data directory from the tray menu or Settings. Older uncompress
 
 LightClip may also keep `lightclip-store.json.br.bak` and `.corrupt-*` recovery files in the active storage directory. These files can contain the same clipboard data as the primary store and should be treated as private.
 
+When local encryption is enabled and available, the compressed store is encrypted with Electron safeStorage, which is backed by the current Windows account. This reduces casual local exposure but does not make exported JSON backups encrypted.
+
 ## What Is Not Stored
 
 LightClip does not intentionally store:
@@ -42,6 +44,7 @@ LightClip does not intentionally store:
 - Cloud account credentials.
 - Remote sync tokens.
 - Analytics identifiers.
+- Clipboard data from configured excluded foreground apps.
 
 ## Network Behavior
 
