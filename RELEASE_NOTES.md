@@ -1,17 +1,17 @@
-# LightClip v1.1.0
+# LightClip v1.2.0
 
 ## Highlights
 
-- Added Windows account-backed local store encryption through Electron safeStorage.
-- Migrates plain Brotli stores to encrypted Brotli stores when encryption is enabled and available.
-- Added foreground app exclusions for password managers or other sensitive tools.
-- Added optional paste-after-select behavior for selecting an item and sending `Ctrl + V`.
-- Added Settings controls for local encryption, excluded apps, and paste-after-select.
+- Added staged history rendering for large history lists.
+- Added lazy image decoding for image rows and previews.
+- Added manual update checks against GitHub Releases.
+- Added allowlisted release-page opening when an update is available.
+- Added GitHub Actions CI and manual Windows release-build workflows.
 
 ## Download
 
-- `LightClip Setup 1.1.0.exe`: installer for daily use.
-- `LightClip 1.1.0.exe`: portable build that can run directly.
+- `LightClip Setup 1.2.0.exe`: installer for daily use.
+- `LightClip 1.2.0.exe`: portable build that can run directly.
 
 ## Verification
 
@@ -25,4 +25,5 @@
 - The app is not code signed yet, so Windows may show an unknown publisher warning.
 - Image history and file history remain opt-in because clipboard data can be sensitive.
 - Encrypted stores are bound to the current Windows account and may not decrypt under another account.
+- Manual update checks contact GitHub Releases only when clicked.
 - Exported JSON files contain clipboard history in plain text/data URLs, so keep exports private.

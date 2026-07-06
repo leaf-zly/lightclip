@@ -8,6 +8,28 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.2.0] - 2026-07-06
+
+### Added
+
+- Added staged history rendering to reduce initial DOM work for large history lists.
+- Added lazy image decoding for image history rows and previews.
+- Added manual GitHub Release update checks from Settings.
+- Added allowlisted external release-page opening for update checks.
+- Added GitHub Actions CI workflow for typecheck and build.
+- Added manual GitHub Actions release-build workflow for Windows packaging artifacts.
+
+### Changed
+
+- Added package manager metadata for reproducible pnpm setup in CI.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+
 ## [1.1.0] - 2026-07-06
 
 ### Added
@@ -154,6 +176,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.2.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.0
 [1.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.1.0
 [1.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.1
 [1.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.0

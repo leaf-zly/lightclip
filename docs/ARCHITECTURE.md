@@ -70,6 +70,7 @@ The renderer never imports Electron directly. It calls the preload bridge:
 - read state
 - copy/delete/toggle pin/clear history
 - update settings
+- check GitHub Releases for updates on demand
 - control window visibility
 - quit the app
 - subscribe to state changes
@@ -86,6 +87,8 @@ Theme accents are persisted as `AppThemeAccent` values. Appearance mode is persi
 - switches
 - toast and empty states
 - image preview surfaces
+
+Large history lists are rendered in stages. The renderer starts with a bounded subset, extends the rendered window during scroll or keyboard navigation, and keeps filtering/search state based on the full in-memory list owned by the main process.
 
 ## Packaging
 

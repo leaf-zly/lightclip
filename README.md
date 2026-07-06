@@ -2,7 +2,7 @@
 
 LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
 
-> Current release: `v1.1.0`. This privacy release adds OS-backed local store encryption, foreground app exclusions, and optional paste-after-select behavior.
+> Current release: `v1.2.0`. This release adds staged history rendering for large lists, manual update checks, and GitHub Actions build workflows.
 
 ## Project Status
 
@@ -18,6 +18,8 @@ LightClip is stable for the local Windows clipboard-history workflow. Image and 
 - Optional Windows account-backed encryption for the local store.
 - Foreground app exclusions for password managers or other sensitive tools.
 - Optional paste-after-select behavior for faster reuse.
+- Staged rendering for large history lists so startup and filtering stay responsive.
+- Manual update checks against GitHub Releases.
 - Tray-first behavior: closing the window hides it to the system tray.
 - Startup registration for the current Windows user without administrator privileges.
 - Global shortcut support, defaulting to `Alt + V`.
@@ -60,6 +62,7 @@ Open the settings panel from the top-right toolbar.
 | Local encryption | On when available | Uses Electron safeStorage backed by the current Windows account. |
 | Excluded apps | Empty | Process names listed here are not captured when they are in the foreground. |
 | Paste after copy | Off | Sends `Ctrl + V` after selecting a history item. |
+| Check updates | Manual | Checks GitHub Releases only when clicked. |
 | History limit | `300` | Applies to non-pinned records. |
 | Global shortcut | `Alt + V` | Re-registers when changed. |
 | Appearance | System | Supports system, light, and dark modes. |

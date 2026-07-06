@@ -28,7 +28,7 @@ const criticalSources = [
   },
   {
     path: 'src/main/index.ts',
-    requiredTokens: ['selectStorageDirectory', 'resetStorageDirectory', 'openStorageDirectory', 'registerStoredGlobalShortcut', 'readForegroundProcessName'],
+    requiredTokens: ['selectStorageDirectory', 'resetStorageDirectory', 'openStorageDirectory', 'registerStoredGlobalShortcut', 'readForegroundProcessName', 'checkForUpdates'],
   },
 ]
 

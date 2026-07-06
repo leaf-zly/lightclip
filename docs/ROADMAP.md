@@ -25,6 +25,12 @@ This roadmap lists practical extensions that fit LightClip's lightweight clipboa
 - Foreground app exclusions for sensitive apps.
 - Optional paste-after-select behavior.
 
+## Completed In v1.2.0
+
+- Staged rendering for large history lists.
+- Manual GitHub Release update checks.
+- GitHub Actions CI and manual Windows release-build workflow.
+
 ## Near-Term
 
 - Richer search:
@@ -45,7 +51,6 @@ This roadmap lists practical extensions that fit LightClip's lightweight clipboa
   - file path grouping and quick open location
 - Reliability:
   - end-to-end UI smoke tests
-  - packaged app startup tests
   - store migration tests
 
 ## Later

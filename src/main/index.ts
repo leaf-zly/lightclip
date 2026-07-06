@@ -30,6 +30,7 @@ import {
   type HistoryExportSnapshot,
   type HistoryImportResult,
   type StorageLocationResult,
+  type UpdateCheckResult,
 } from '../shared/types.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -39,6 +40,8 @@ const appIconPath = getAppIconPath()
 const WINDOWS_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
 const LIGHTCLIP_STARTUP_ENTRY_NAMES = ['electron.app.Electron', 'electron.app.LightClip']
 const FALLBACK_GLOBAL_SHORTCUT = 'Alt+V'
+const RELEASE_API_URL = 'https://api.github.com/repos/leaf-zly/lightclip/releases/latest'
+const RELEASE_URL_PREFIX = 'https://github.com/leaf-zly/lightclip/'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -709,6 +712,24 @@ function writeFileDropListToClipboard(paths: string[]): boolean {
 function isClipboardItemKind(value: unknown): value is ClipboardItemKind {
   return value === 'text' || value === 'image' || value === 'file'
 }
+
+function normalizeReleaseVersion(value: string): string {
+  return value.trim().replace(/^v/i, '')
+}
+
+function compareSemver(left: string, right: string): number {
+  const leftParts = left.split('.').map((part) => Number.parseInt(part, 10) || 0)
+  const rightParts = right.split('.').map((part) => Number.parseInt(part, 10) || 0)
+  for (let index = 0; index < 3; index += 1) {
+    const delta = (leftParts[index] ?? 0) - (rightParts[index] ?? 0)
+    if (delta !== 0) {
+      return delta
+    }
+  }
+
+  return 0
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -773,6 +794,49 @@ ipcMain.handle(IPC_CHANNELS.exportHistory, async (): Promise<CommandResult<Histo
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : '导出失败' }
   }
+})
+
+ipcMain.handle(IPC_CHANNELS.checkForUpdates, async (): Promise<CommandResult<UpdateCheckResult>> => {
+  try {
+    const response = await fetch(RELEASE_API_URL, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'LightClip',
+      },
+    })
+    if (!response.ok) {
+      return { ok: false, error: `检查更新失败：HTTP ${response.status}` }
+    }
+
+    const release = (await response.json()) as { tag_name?: unknown; html_url?: unknown }
+    const latestVersion = normalizeReleaseVersion(typeof release.tag_name === 'string' ? release.tag_name : '')
+    const releaseUrl = typeof release.html_url === 'string' ? release.html_url : 'https://github.com/leaf-zly/lightclip/releases'
+    if (!latestVersion) {
+      return { ok: false, error: '未找到可用的最新版本号' }
+    }
+
+    const currentVersion = app.getVersion()
+    return {
+      ok: true,
+      data: {
+        currentVersion,
+        latestVersion,
+        updateAvailable: compareSemver(latestVersion, currentVersion) > 0,
+        releaseUrl,
+      },
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : '检查更新失败' }
+  }
+})
+
+ipcMain.handle(IPC_CHANNELS.openExternalUrl, async (_event, url: string): Promise<CommandResult> => {
+  if (typeof url !== 'string' || !url.startsWith(RELEASE_URL_PREFIX)) {
+    return { ok: false, error: '不允许打开该链接' }
+  }
+
+  await shell.openExternal(url)
+  return { ok: true }
 })
 
 ipcMain.handle(IPC_CHANNELS.importHistory, async (): Promise<CommandResult<HistoryImportResult>> => {

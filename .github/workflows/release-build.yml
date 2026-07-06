@@ -1,0 +1,40 @@
+name: Release Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: Package Windows Assets
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package
+        run: pnpm dist
+
+      - name: Upload Release Assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightclip-windows-release
+          path: |
+            release/LightClip Setup *.exe
+            release/LightClip Setup *.exe.blockmap
+            release/LightClip *.exe
+            release/latest.yml

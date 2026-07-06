@@ -31,6 +31,8 @@ pnpm dist
 
 7. Smoke test the packaged or production Electron app.
 
+GitHub Actions also runs `pnpm typecheck` and `pnpm build` on `main` and pull requests. The manual `Release Build` workflow can produce Windows release artifacts for maintainers.
+
 ## Build Outputs
 
 `pnpm dist` writes release assets to `release/`:

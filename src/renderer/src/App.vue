@@ -19,6 +19,7 @@ import {
   PinOff,
   Play,
   Power,
+  RefreshCw,
   RotateCcw,
   Search,
   Settings,
@@ -68,6 +69,8 @@ interface HistoryFilterOption {
 
 const DEFAULT_SHORTCUT = 'Alt+V'
 const DEFAULT_PAUSE_MINUTES = 15
+const INITIAL_RENDER_LIMIT = 120
+const RENDER_LIMIT_STEP = 80
 const themeAccents: readonly ThemeAccentOption[] = [
   { id: 'mint', label: '薄荷绿', color: '#20b486' },
   { id: 'blue', label: '湖蓝', color: '#3278d7' },
@@ -119,6 +122,7 @@ const state = ref<AppState>({
 const query = ref('')
 const activeFilter = ref<HistoryFilterOption['id']>('all')
 const selectedIndex = ref(0)
+const visibleLimit = ref(INITIAL_RENDER_LIMIT)
 const showSettings = ref(false)
 const previewItem = ref<ClipboardItem | null>(null)
 const toast = ref('')
@@ -146,6 +150,7 @@ const filteredItems = computed(() =>
     return item.kind === activeFilter.value
   }),
 )
+const visibleItems = computed(() => filteredItems.value.slice(0, visibleLimit.value))
 const selectedItem = computed(() => filteredItems.value[selectedIndex.value] ?? null)
 const pinnedCount = computed(() => state.value.items.filter((item) => item.pinned).length)
 const regularCount = computed(() => state.value.items.length - pinnedCount.value)
@@ -216,6 +221,7 @@ onBeforeUnmount(() => {
 })
 
 watch([filteredItems, query, activeFilter], () => {
+  visibleLimit.value = INITIAL_RENDER_LIMIT
   selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, filteredItems.value.length - 1))
 })
 
@@ -295,6 +301,24 @@ async function importHistory(): Promise<void> {
 
   if (result.data) {
     showToast(`已导入 ${result.data.importedCount} 条记录`)
+  }
+}
+
+async function checkForUpdates(): Promise<void> {
+  const result = await window.lightClip.checkForUpdates()
+  if (!result.ok || !result.data) {
+    showToast(result.error ?? '检查更新失败')
+    return
+  }
+
+  if (!result.data.updateAvailable) {
+    showToast(`已是最新版本 ${result.data.currentVersion}`)
+    return
+  }
+
+  const confirmed = window.confirm(`发现新版本 ${result.data.latestVersion}，是否打开下载页？`)
+  if (confirmed) {
+    await window.lightClip.openExternalUrl(result.data.releaseUrl)
   }
 }
 
@@ -382,6 +406,21 @@ function moveSelection(delta: number): void {
 
   const nextIndex = selectedIndex.value + delta
   selectedIndex.value = Math.min(filteredItems.value.length - 1, Math.max(0, nextIndex))
+  ensureVisibleLimitIncludes(selectedIndex.value)
+}
+
+function ensureVisibleLimitIncludes(index: number): void {
+  if (index >= visibleLimit.value - 8) {
+    visibleLimit.value = Math.min(filteredItems.value.length, visibleLimit.value + RENDER_LIMIT_STEP)
+  }
+}
+
+function handleHistoryScroll(event: Event): void {
+  const element = event.currentTarget as HTMLElement
+  const remaining = element.scrollHeight - element.scrollTop - element.clientHeight
+  if (remaining < 220 && visibleLimit.value < filteredItems.value.length) {
+    visibleLimit.value = Math.min(filteredItems.value.length, visibleLimit.value + RENDER_LIMIT_STEP)
+  }
 }
 
 function showToast(message: string): void {
@@ -711,6 +750,10 @@ function handleKeyboard(event: KeyboardEvent): void {
               <Upload :size="16" />
               导入
             </button>
+            <button class="text-button" type="button" title="检查更新" @click="checkForUpdates">
+              <RefreshCw :size="16" />
+              更新
+            </button>
           </div>
         </div>
 
@@ -822,9 +865,9 @@ function handleKeyboard(event: KeyboardEvent): void {
           </div>
         </div>
 
-        <section v-if="filteredItems.length" class="history-list" aria-label="剪贴板历史">
+        <section v-if="filteredItems.length" class="history-list" aria-label="剪贴板历史" @scroll="handleHistoryScroll">
           <article
-            v-for="(item, index) in filteredItems"
+            v-for="(item, index) in visibleItems"
             :key="item.id"
             class="history-item"
             :class="[`history-item-${item.kind}`, { selected: selectedIndex === index, pinned: item.pinned }]"
@@ -837,7 +880,7 @@ function handleKeyboard(event: KeyboardEvent): void {
                   <Image :size="17" />
                 </span>
                 <span class="image-preview-frame">
-                  <img class="image-preview" :src="item.dataUrl" alt="" />
+                  <img class="image-preview" :src="item.dataUrl" alt="" loading="lazy" decoding="async" />
                 </span>
                 <span class="image-item-copy">
                   <span class="item-preview">{{ createItemTitle(item) }}</span>
@@ -921,7 +964,7 @@ function handleKeyboard(event: KeyboardEvent): void {
             </header>
 
             <div class="preview-body" :class="`preview-body-${previewItem.kind}`">
-              <img v-if="previewItem.kind === 'image'" class="preview-image" :src="previewItem.dataUrl" alt="" />
+              <img v-if="previewItem.kind === 'image'" class="preview-image" :src="previewItem.dataUrl" alt="" decoding="async" />
               <pre v-else-if="previewItem.kind === 'text'" class="preview-text">{{ previewItem.text }}</pre>
               <div v-else class="preview-files">
                 <div v-for="path in previewItem.paths" :key="path" class="preview-file-row">

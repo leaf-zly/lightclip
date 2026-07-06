@@ -171,6 +171,20 @@ export interface HistoryImportResult {
 }
 
 /**
+ * Result returned after checking GitHub Releases for a newer version.
+ */
+export interface UpdateCheckResult {
+  /** Current application version reported by Electron. */
+  currentVersion: string
+  /** Latest public release version found on GitHub. */
+  latestVersion: string
+  /** Whether the latest version is newer than the running app. */
+  updateAvailable: boolean
+  /** Browser URL for the latest release. */
+  releaseUrl: string
+}
+
+/**
  * Portable JSON shape written by the history export workflow.
  */
 export interface HistoryExportSnapshot {
@@ -208,6 +222,8 @@ export const IPC_CHANNELS = {
   clearByKind: 'lightclip:clear-by-kind',
   exportHistory: 'lightclip:export-history',
   importHistory: 'lightclip:import-history',
+  checkForUpdates: 'lightclip:check-for-updates',
+  openExternalUrl: 'lightclip:open-external-url',
   selectStorageDirectory: 'lightclip:select-storage-directory',
   resetStorageDirectory: 'lightclip:reset-storage-directory',
   openStorageDirectory: 'lightclip:open-storage-directory',
@@ -241,6 +257,10 @@ export interface LightClipApi {
   exportHistory: () => Promise<CommandResult<HistoryExportResult>>
   /** Imports settings and history from a user-selected JSON file. */
   importHistory: () => Promise<CommandResult<HistoryImportResult>>
+  /** Checks whether a newer GitHub Release is available. */
+  checkForUpdates: () => Promise<CommandResult<UpdateCheckResult>>
+  /** Opens an allowlisted external URL in the default browser. */
+  openExternalUrl: (url: string) => Promise<CommandResult>
   /** Moves the compressed store file to a user-selected directory. */
   selectStorageDirectory: () => Promise<CommandResult<StorageLocationResult>>
   /** Moves the compressed store file back to Electron's default user data directory. */
