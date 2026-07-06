@@ -1,16 +1,16 @@
-# LightClip v1.2.2
+# LightClip v1.2.3
 
 ## Highlights
 
-- Selecting a history item now hides the quick panel immediately.
-- Clipboard writes and optional paste delivery happen before usage-count persistence.
-- Usage counts still update in the background and broadcast state after the save completes.
-- Manual copy operations now share the clipboard watcher signature format to avoid duplicate history records.
+- Paste-after-copy now uses a warm lightweight Windows Script Host helper instead of launching PowerShell for every paste.
+- Automatic paste delivery is asynchronous, so it no longer blocks the Electron main process.
+- The helper starts only when paste-after-copy is enabled and is stopped when the setting is disabled or the app exits.
+- The quick panel still hides immediately after selecting a history item.
 
 ## Download
 
-- `LightClip Setup 1.2.2.exe`: installer for daily use.
-- `LightClip 1.2.2.exe`: portable build that can run directly.
+- `LightClip Setup 1.2.3.exe`: installer for daily use.
+- `LightClip 1.2.3.exe`: portable build that can run directly.
 
 ## Verification
 
@@ -18,6 +18,7 @@
 - `pnpm build`
 - `pnpm dist`
 - Packaged startup and compressed-store smoke check.
+- Paste helper quit smoke check.
 
 ## Notes
 

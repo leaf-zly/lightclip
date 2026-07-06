@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
@@ -42,6 +42,36 @@ const LIGHTCLIP_STARTUP_ENTRY_NAMES = ['electron.app.Electron', 'electron.app.Li
 const FALLBACK_GLOBAL_SHORTCUT = 'Alt+V'
 const RELEASE_API_URL = 'https://api.github.com/repos/leaf-zly/lightclip/releases/latest'
 const RELEASE_URL_PREFIX = 'https://github.com/leaf-zly/lightclip/'
+const PASTE_HELPER_FILE_NAME = 'lightclip-paste-helper.vbs'
+/**
+ * Small Windows Script Host program kept warm while paste-after-copy is enabled.
+ * It avoids launching PowerShell for every paste and keeps the visible interaction path responsive.
+ */
+const PASTE_HELPER_SCRIPT = [
+  'Option Explicit',
+  'Dim shell, command',
+  'Set shell = CreateObject("WScript.Shell")',
+  'If WScript.Arguments.Count > 0 Then',
+  '  If LCase(WScript.Arguments(0)) = "--once" Then',
+  '    WScript.Sleep 180',
+  '    shell.SendKeys "^v"',
+  '    WScript.Quit 0',
+  '  End If',
+  'End If',
+  'Do',
+  '  On Error Resume Next',
+  '  command = WScript.StdIn.ReadLine',
+  '  If Err.Number <> 0 Then WScript.Quit 0',
+  '  On Error GoTo 0',
+  '  command = LCase(Trim(command))',
+  '  If command = "quit" Then WScript.Quit 0',
+  '  If command = "paste" Then',
+  '    WScript.Sleep 180',
+  '    shell.SendKeys "^v"',
+  '    WScript.StdOut.WriteLine "ok"',
+  '  End If',
+  'Loop',
+].join('\r\n')
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -49,6 +79,9 @@ let clipboardTimer: NodeJS.Timeout | null = null
 let lastClipboardSignature = ''
 let activeGlobalShortcut = ''
 let isQuitting = false
+let pasteHelperProcess: ChildProcessWithoutNullStreams | null = null
+let pasteHelperStartPromise: Promise<void> | null = null
+let pasteHelperScriptPath: string | null = null
 
 interface ClipboardSnapshot {
   signature: string
@@ -82,6 +115,7 @@ async function bootstrap(): Promise<void> {
   createWindow()
   await registerStoredGlobalShortcut()
   startClipboardWatcher()
+  syncPasteHelperProcess(store.getState().settings.pasteAfterCopy)
 
   if (!shouldStartHidden()) {
     showPanel()
@@ -112,6 +146,7 @@ app.on('will-quit', () => {
   if (clipboardTimer) {
     clearInterval(clipboardTimer)
   }
+  stopPasteHelperProcess()
   globalShortcut.unregisterAll()
 })
 
@@ -573,6 +608,7 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<AppSettin
     const nextSettings = await store.updateSettings(settings)
     applyLaunchAtLogin(nextSettings.launchAtLogin)
     updateTrayMenu()
+    syncPasteHelperProcess(nextSettings.pasteAfterCopy)
     broadcastState()
     return nextSettings
   } catch (error) {
@@ -703,29 +739,175 @@ async function persistCopiedItemUsage(id: string): Promise<void> {
 }
 
 /**
- * Writes a true Windows file-drop clipboard payload so Explorer can paste files directly.
- *
- * Electron cannot set CF_HDROP directly from JavaScript, so on Windows we use
- * the built-in STA clipboard API exposed by System.Windows.Forms. The caller
- * falls back to text/HTML if this helper is unavailable.
+ * Requests Ctrl+V in the foreground app after the panel has been hidden and the clipboard has been updated.
  */
 function pasteIntoForegroundApp(): void {
   if (process.platform !== 'win32') {
     return
   }
 
-  setTimeout(() => {
-    const script = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("^v")'
-    const result = spawnSync('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-      windowsHide: true,
-      timeout: 3000,
-    })
-    if (result.error || result.status !== 0) {
-      console.warn('Failed to paste into foreground app.', result.error ?? result.stderr.toString())
-    }
-  }, 140)
+  void sendPasteCommandToForegroundApp()
 }
 
+function syncPasteHelperProcess(enabled: boolean): void {
+  if (process.platform !== 'win32') {
+    return
+  }
+
+  if (enabled) {
+    void ensurePasteHelperProcess()
+    return
+  }
+
+  stopPasteHelperProcess()
+}
+
+async function sendPasteCommandToForegroundApp(): Promise<void> {
+  try {
+    await ensurePasteHelperProcess()
+    const helper = pasteHelperProcess
+    if (!helper || helper.killed || !helper.stdin.writable) {
+      await runOneShotPasteHelper()
+      return
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      helper.stdin.write('paste\n', (error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve()
+      })
+    })
+  } catch (error) {
+    console.warn('Failed to send paste command through the warm helper.', error)
+    await runOneShotPasteHelper().catch((fallbackError) => {
+      console.warn('Failed to paste into foreground app.', fallbackError)
+    })
+  }
+}
+
+async function ensurePasteHelperProcess(): Promise<void> {
+  if (pasteHelperProcess && !pasteHelperProcess.killed && pasteHelperProcess.stdin.writable) {
+    return
+  }
+
+  if (pasteHelperStartPromise) {
+    return pasteHelperStartPromise
+  }
+
+  pasteHelperStartPromise = (async () => {
+    const scriptPath = await ensurePasteHelperScript()
+    if (pasteHelperProcess && !pasteHelperProcess.killed && pasteHelperProcess.stdin.writable) {
+      return
+    }
+
+    const helper = spawn('cscript.exe', ['//B', '//Nologo', scriptPath], { windowsHide: true })
+    pasteHelperProcess = helper
+    helper.stdout.setEncoding('utf8')
+    helper.stderr.setEncoding('utf8')
+    helper.stdout.on('data', () => {
+      // Drain acknowledgements so the helper pipe cannot fill during long sessions.
+    })
+    helper.stderr.on('data', (chunk) => {
+      const message = chunk.toString().trim()
+      if (message) {
+        console.warn('LightClip paste helper stderr:', message)
+      }
+    })
+    helper.once('error', (error) => {
+      if (pasteHelperProcess === helper) {
+        pasteHelperProcess = null
+      }
+      console.warn('Failed to start LightClip paste helper.', error)
+    })
+    helper.once('exit', (code, signal) => {
+      if (pasteHelperProcess === helper) {
+        pasteHelperProcess = null
+      }
+      if (!isQuitting && code !== 0) {
+        console.warn(`LightClip paste helper exited unexpectedly. code=${code ?? 'null'} signal=${signal ?? 'null'}`)
+      }
+    })
+  })()
+
+  try {
+    await pasteHelperStartPromise
+  } finally {
+    pasteHelperStartPromise = null
+  }
+}
+
+async function ensurePasteHelperScript(): Promise<string> {
+  if (pasteHelperScriptPath) {
+    return pasteHelperScriptPath
+  }
+
+  const helperDirectory = app.getPath('userData')
+  const helperPath = join(helperDirectory, PASTE_HELPER_FILE_NAME)
+  await mkdir(helperDirectory, { recursive: true })
+  await writeFile(helperPath, PASTE_HELPER_SCRIPT, 'utf8')
+  pasteHelperScriptPath = helperPath
+  return helperPath
+}
+
+function stopPasteHelperProcess(): void {
+  const helper = pasteHelperProcess
+  pasteHelperProcess = null
+  if (!helper) {
+    return
+  }
+
+  if (helper.stdin.writable) {
+    helper.stdin.end('quit\n')
+  }
+
+  const killTimer = setTimeout(() => {
+    if (!helper.killed) {
+      helper.kill()
+    }
+  }, 750)
+  killTimer.unref()
+}
+
+async function runOneShotPasteHelper(): Promise<void> {
+  const scriptPath = await ensurePasteHelperScript()
+  await new Promise<void>((resolve, reject) => {
+    const helper = spawn('cscript.exe', ['//B', '//Nologo', scriptPath, '--once'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    const killTimer = setTimeout(() => {
+      helper.kill()
+      reject(new Error('Paste helper timed out'))
+    }, 2500)
+    killTimer.unref()
+
+    helper.once('error', (error) => {
+      clearTimeout(killTimer)
+      reject(error)
+    })
+    helper.once('exit', (code) => {
+      clearTimeout(killTimer)
+      if (code && code !== 0) {
+        reject(new Error(`Paste helper exited with code ${code}`))
+        return
+      }
+
+      resolve()
+    })
+  })
+}
+
+/**
+ * Writes a true Windows file-drop clipboard payload so Explorer can paste files directly.
+ *
+ * Electron cannot set CF_HDROP directly from JavaScript, so on Windows we use
+ * the built-in STA clipboard API exposed by System.Windows.Forms. The caller
+ * falls back to text/HTML if this helper is unavailable.
+ */
 function writeFileDropListToClipboard(paths: string[]): boolean {
   if (process.platform !== 'win32' || paths.length === 0) {
     return false

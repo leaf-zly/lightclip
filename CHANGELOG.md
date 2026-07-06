@@ -8,6 +8,22 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.2.3] - 2026-07-06
+
+### Fixed
+
+- Replaced per-paste PowerShell startup with a warm Windows Script Host helper for paste-after-copy delivery.
+- Started and stopped the paste helper with the paste-after-copy setting so the helper only runs when the feature is enabled.
+- Kept automatic paste delivery asynchronous so it cannot block the Electron main process.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+- Paste helper quit smoke check.
+
 ## [1.2.2] - 2026-07-06
 
 ### Fixed
@@ -204,6 +220,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.2.3]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.3
 [1.2.2]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.2
 [1.2.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.1
 [1.2.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.0
