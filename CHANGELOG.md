@@ -8,6 +8,19 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.2.1] - 2026-07-06
+
+### Fixed
+
+- Made theme accent and appearance changes apply immediately in the renderer instead of waiting for encrypted store persistence.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+
 ## [1.2.0] - 2026-07-06
 
 ### Added
@@ -176,6 +189,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.2.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.1
 [1.2.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.0
 [1.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.1.0
 [1.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.0.1

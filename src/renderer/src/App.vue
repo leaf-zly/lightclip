@@ -391,11 +391,27 @@ async function closeWindow(): Promise<void> {
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
+  const shouldApplyOptimisticTheme = isThemeSettingsUpdate(settings)
+  if (shouldApplyOptimisticTheme) {
+    // Theme changes should repaint immediately; the main process still persists and broadcasts the canonical state.
+    state.value = {
+      ...state.value,
+      settings: {
+        ...state.value.settings,
+        ...settings,
+      },
+    }
+  }
+
   const result = await window.lightClip.updateSettings(settings)
   if (!result.ok) {
     showToast(result.error ?? '设置保存失败')
     state.value = await window.lightClip.getState()
   }
+}
+
+function isThemeSettingsUpdate(settings: Partial<AppSettings>): boolean {
+  return Boolean(settings.themeAccent || settings.themeMode)
 }
 
 function moveSelection(delta: number): void {

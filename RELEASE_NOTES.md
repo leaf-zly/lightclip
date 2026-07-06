@@ -1,17 +1,14 @@
-# LightClip v1.2.0
+# LightClip v1.2.1
 
 ## Highlights
 
-- Added staged history rendering for large history lists.
-- Added lazy image decoding for image rows and previews.
-- Added manual update checks against GitHub Releases.
-- Added allowlisted release-page opening when an update is available.
-- Added GitHub Actions CI and manual Windows release-build workflows.
+- Theme accent and appearance changes now apply immediately in the renderer.
+- Persistence still happens in the background, so encrypted/compressed stores no longer make the UI feel stuck when switching colors.
 
 ## Download
 
-- `LightClip Setup 1.2.0.exe`: installer for daily use.
-- `LightClip 1.2.0.exe`: portable build that can run directly.
+- `LightClip Setup 1.2.1.exe`: installer for daily use.
+- `LightClip 1.2.1.exe`: portable build that can run directly.
 
 ## Verification
 
