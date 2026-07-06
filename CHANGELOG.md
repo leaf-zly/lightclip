@@ -8,6 +8,21 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.2.2] - 2026-07-06
+
+### Fixed
+
+- Made the quick panel hide immediately after selecting a history item instead of waiting for clipboard writes or encrypted store persistence.
+- Moved copy-count persistence off the user-visible copy path while preserving state broadcasts after the background save completes.
+- Reused the same clipboard signature format for polling and manual copy operations to avoid duplicate history records.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Packaged startup smoke check.
+
 ## [1.2.1] - 2026-07-06
 
 ### Fixed
@@ -189,6 +204,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.2.2]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.2
 [1.2.1]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.1
 [1.2.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.0
 [1.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v1.1.0

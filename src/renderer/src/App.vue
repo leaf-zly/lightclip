@@ -238,8 +238,11 @@ async function copySelectedItem(): Promise<void> {
 }
 
 async function copyItem(item: ClipboardItem): Promise<void> {
+  void window.lightClip.hidePanel()
   const result = await window.lightClip.copyItem(item.id)
-  showToast(result.ok ? '已复制到剪贴板' : result.error ?? '复制失败')
+  if (!result.ok) {
+    showToast(result.error ?? '复制失败')
+  }
 }
 
 async function deleteItem(item: ClipboardItem): Promise<void> {

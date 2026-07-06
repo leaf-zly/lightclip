@@ -63,6 +63,14 @@ interface ClipboardSnapshot {
 }
 
 /**
+ * Metadata produced while writing a history item back to the system clipboard.
+ */
+interface ClipboardWriteMetadata {
+  /** Expected watcher signature for the clipboard payload written by LightClip. */
+  signature: string
+}
+
+/**
  * Application bootstrap. Loads state, registers OS integrations, then opens the quick panel.
  */
 async function bootstrap(): Promise<void> {
@@ -353,14 +361,8 @@ function readClipboardSnapshot(settings: AppSettings): ClipboardSnapshot {
   const text = clipboard.readText()
   const files = settings.captureFiles ? readClipboardFiles(text) : []
   const image = settings.captureImages ? readClipboardImage() : null
-  const signatureParts = [
-    text ? `text:${text}` : '',
-    files.length ? `files:${files.join('\n')}` : '',
-    image ? `image:${image.byteSize}:${image.width}x${image.height}:${image.dataUrl.slice(0, 96)}` : '',
-  ].filter(Boolean)
-
   return {
-    signature: signatureParts.join('|'),
+    signature: createSnapshotSignature(text, files, image),
     text,
     image,
     files,
@@ -621,27 +623,28 @@ ipcMain.handle(IPC_CHANNELS.copyItem, async (_event, id: string): Promise<Comman
     return { ok: false, error: '记录不存在' }
   }
 
-  writeItemToClipboard(item)
-  lastClipboardSignature = readClipboardSnapshot(store.getState().settings).signature
-  const updated = await store.touchCopiedItem(id)
-  const { pasteAfterCopy } = store.getState().settings
-  broadcastState()
+  const settings = store.getState().settings
+  const { pasteAfterCopy } = settings
+  // Hide before clipboard writes, file-drop PowerShell work, or encrypted store persistence can block the visible path.
   hidePanel()
+  const writeMetadata = writeItemToClipboard(item, settings)
+  lastClipboardSignature = writeMetadata.signature
   if (pasteAfterCopy) {
     pasteIntoForegroundApp()
   }
-  return { ok: true, data: updated ?? item }
+  void persistCopiedItemUsage(id)
+  return { ok: true, data: item }
 })
 
-function writeItemToClipboard(item: ClipboardItem): void {
+function writeItemToClipboard(item: ClipboardItem, settings: AppSettings): ClipboardWriteMetadata {
   if (item.kind === 'image') {
     clipboard.writeImage(nativeImage.createFromDataURL(item.dataUrl))
-    return
+    return { signature: createImageClipboardSignature(item, settings) }
   }
 
   if (item.kind === 'file') {
     if (writeFileDropListToClipboard(item.paths)) {
-      return
+      return { signature: createFileClipboardSignature(item.paths, '', settings) }
     }
 
     const text = item.paths.join('\r\n')
@@ -649,10 +652,54 @@ function writeItemToClipboard(item: ClipboardItem): void {
       text,
       html: item.paths.map((path) => `<a href="${pathToFileURL(path).toString()}">${escapeHtml(path)}</a>`).join('<br>'),
     })
-    return
+    return { signature: createFileClipboardSignature(item.paths, text, settings) }
   }
 
   clipboard.writeText(item.text)
+  return { signature: createTextClipboardSignature(item.text, settings) }
+}
+
+function createTextClipboardSignature(text: string, settings: AppSettings): string {
+  const files = settings.captureFiles ? readFilePathsFromText(text) : []
+  return createSnapshotSignature(text, files, null)
+}
+
+function createImageClipboardSignature(item: ClipboardItem, settings: AppSettings): string {
+  if (item.kind !== 'image' || !settings.captureImages) {
+    return ''
+  }
+
+  return createSnapshotSignature('', [], {
+    dataUrl: item.dataUrl,
+    width: item.width,
+    height: item.height,
+    byteSize: item.byteSize,
+  })
+}
+
+function createFileClipboardSignature(paths: string[], textFallback: string, settings: AppSettings): string {
+  return createSnapshotSignature(textFallback, settings.captureFiles ? paths : [], null)
+}
+
+function createSnapshotSignature(text: string, files: string[], image: ClipboardSnapshot['image']): string {
+  // Keep this format shared by live polling and manual copy writes to avoid re-recording LightClip's own clipboard updates.
+  const signatureParts = [
+    text ? `text:${text}` : '',
+    files.length ? `files:${files.join('\n')}` : '',
+    image ? `image:${image.byteSize}:${image.width}x${image.height}:${image.dataUrl.slice(0, 96)}` : '',
+  ].filter(Boolean)
+
+  return signatureParts.join('|')
+}
+
+async function persistCopiedItemUsage(id: string): Promise<void> {
+  // Copy counters are useful metadata, but saving them must never delay panel dismissal or paste delivery.
+  try {
+    await store.touchCopiedItem(id)
+    broadcastState()
+  } catch (error) {
+    console.warn('Failed to persist copied item usage.', error)
+  }
 }
 
 /**
