@@ -56,6 +56,7 @@ $memberDefinition = @(
   '[DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);',
+  '[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);',
@@ -159,10 +160,16 @@ function Invoke-LightClipActivateWindow {
       $attachedForeground = [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $foregroundThreadId, $true)
     }
 
-    [void] [LightClip.NativeMethods]::ShowWindowAsync($windowHandle, $script:SW_RESTORE)
-    Start-Sleep -Milliseconds 40
-    [void] [LightClip.NativeMethods]::BringWindowToTop($windowHandle)
-    [void] [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)
+    # Avoid SW_RESTORE for normal or maximized windows because it can resize the user's target app.
+    if ([LightClip.NativeMethods]::IsIconic($windowHandle)) {
+      [void] [LightClip.NativeMethods]::ShowWindowAsync($windowHandle, $script:SW_RESTORE)
+      Start-Sleep -Milliseconds 40
+    }
+
+    if (-not [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)) {
+      [void] [LightClip.NativeMethods]::BringWindowToTop($windowHandle)
+      [void] [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)
+    }
     if ($focusedWindow -ne $script:ZERO_HANDLE) {
       [void] [LightClip.NativeMethods]::SetFocus($focusedWindow)
     }

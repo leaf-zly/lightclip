@@ -6,7 +6,9 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
-No unreleased changes yet.
+### Fixed
+
+- Avoid restoring normal or maximized target windows during paste-after-copy focus recovery, preventing size changes and reducing visible flicker.
 
 ## [1.2.5] - 2026-07-08
 
