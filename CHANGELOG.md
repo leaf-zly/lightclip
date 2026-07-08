@@ -8,6 +8,22 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 No unreleased changes yet.
 
+## [1.2.5] - 2026-07-08
+
+### Fixed
+
+- Fixed paste-after-copy cases where LightClip copied the selected history item but failed to paste it back into the app that opened the panel.
+- Captured the focused child control together with the foreground window before the panel opens.
+- Restored the target app focus through Windows input-thread attachment before sending `Ctrl + V`.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm dist`
+- Full source E2E: isolated LightClip instance, real WinForms target input, real `Alt + V`, real item selection, verified target textbox content.
+- Full packaged E2E against `release\win-unpacked\LightClip.exe` with the same target-input flow.
+
 ## [1.2.4] - 2026-07-06
 
 ### Fixed
@@ -236,6 +252,7 @@ No unreleased changes yet.
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[1.2.5]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.5
 [1.2.4]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.4
 [1.2.3]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.3
 [1.2.2]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.2

@@ -1,24 +1,23 @@
-# LightClip v1.2.4
+# LightClip v1.2.5
 
 ## Highlights
 
-- Paste-after-copy now captures the foreground window before the LightClip panel opens.
-- The captured window is reactivated before `Ctrl + V` is sent, so automatic paste targets the app you were using.
-- The warm helper now uses Win32 APIs for capture, restore, and paste delivery through a single stdin command loop.
-- The quick panel still hides immediately after selecting a history item, and paste delivery remains asynchronous.
+- Paste-after-copy now restores both the app window and the focused control captured before LightClip opens.
+- This fixes cases where the selected history item was copied successfully, but `Ctrl + V` stayed on LightClip or another foreground window.
+- The PowerShell helper now uses Windows input-thread attachment for focus restoration instead of relying on a plain foreground-window call.
 
 ## Download
 
-- `LightClip Setup 1.2.4.exe`: installer for daily use.
-- `LightClip 1.2.4.exe`: portable build that can run directly.
+- `LightClip Setup 1.2.5.exe`: installer for daily use.
+- `LightClip 1.2.5.exe`: portable build that can run directly.
 
 ## Verification
 
 - `pnpm typecheck`
 - `pnpm build`
 - `pnpm dist`
-- Packaged startup and compressed-store smoke check.
-- Paste helper capture/quit smoke check.
+- Full source E2E with an isolated LightClip data directory, a real WinForms textbox target, real `Alt + V`, and verified pasted textbox content.
+- Full packaged E2E against `release\win-unpacked\LightClip.exe` with the same target-input flow.
 
 ## Notes
 

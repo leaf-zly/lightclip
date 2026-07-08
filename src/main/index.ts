@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
@@ -45,7 +45,8 @@ const RELEASE_URL_PREFIX = 'https://github.com/leaf-zly/lightclip/'
 const PASTE_HELPER_FILE_NAME = 'lightclip-paste-helper.ps1'
 /**
  * Warm PowerShell helper used by paste-after-copy.
- * It captures/restores the target foreground window and sends Ctrl+V without spawning a new shell for every paste.
+ * It captures the foreground window plus focused child control, restores that focus, and sends Ctrl+V
+ * without spawning a new shell for every paste.
  */
 const PASTE_HELPER_SCRIPT = String.raw`param([string] $OnceTargetWindow = '')
 $ErrorActionPreference = 'Stop'
@@ -55,12 +56,18 @@ $memberDefinition = @(
   '[DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);',
   '[DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);',
-  '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);'
+  '[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);',
+  '[DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);',
+  '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);',
+  '[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);',
+  '[DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);',
+  '[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();',
+  'public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }',
+  'public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public RECT rcCaret; }'
 ) -join ' '
 Add-Type -Namespace LightClip -Name NativeMethods -MemberDefinition $memberDefinition
 $script:SW_RESTORE = 9
-$script:VK_MENU = 0x12
-$script:KEYEVENTF_KEYUP = 0x2
+$script:ZERO_HANDLE = [System.IntPtr]::Zero
 
 function Write-LightClipResponse {
   param([string] $RequestId, [string] $Status, [string] $Payload = '')
@@ -69,27 +76,104 @@ function Write-LightClipResponse {
   [Console]::Out.Flush()
 }
 
-function Get-LightClipForegroundWindow {
-  return [LightClip.NativeMethods]::GetForegroundWindow().ToInt64().ToString()
+function Convert-LightClipWindowHandle {
+  param([string] $Value)
+  [int64] $handleValue = 0
+  if (-not [Int64]::TryParse($Value, [ref] $handleValue) -or $handleValue -le 0) {
+    return $script:ZERO_HANDLE
+  }
+
+  return [System.IntPtr] $handleValue
+}
+
+function Get-LightClipWindowThreadId {
+  param([System.IntPtr] $WindowHandle)
+  if ($WindowHandle -eq $script:ZERO_HANDLE) {
+    return 0
+  }
+
+  [uint32] $processId = 0
+  return [LightClip.NativeMethods]::GetWindowThreadProcessId($WindowHandle, [ref] $processId)
+}
+
+function Get-LightClipFocusedWindow {
+  param([System.IntPtr] $ForegroundWindow)
+  $threadId = Get-LightClipWindowThreadId $ForegroundWindow
+  if ($threadId -eq 0) {
+    return $script:ZERO_HANDLE
+  }
+
+  $info = New-Object LightClip.NativeMethods+GUITHREADINFO
+  $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info)
+  if ([LightClip.NativeMethods]::GetGUIThreadInfo($threadId, [ref] $info) -and $info.hwndFocus -ne $script:ZERO_HANDLE) {
+    return $info.hwndFocus
+  }
+
+  return $script:ZERO_HANDLE
+}
+
+function Get-LightClipForegroundTarget {
+  $foregroundWindow = [LightClip.NativeMethods]::GetForegroundWindow()
+  if ($foregroundWindow -eq $script:ZERO_HANDLE) {
+    return '0;0'
+  }
+
+  $focusedWindow = Get-LightClipFocusedWindow $foregroundWindow
+  return $foregroundWindow.ToInt64().ToString() + ';' + $focusedWindow.ToInt64().ToString()
+}
+
+function Split-LightClipTargetWindow {
+  param([string] $WindowHandle)
+  $parts = $WindowHandle -split ';', 2
+  $topLevelWindow = if ($parts.Length -ge 1) { Convert-LightClipWindowHandle $parts[0] } else { $script:ZERO_HANDLE }
+  $focusedWindow = if ($parts.Length -ge 2) { Convert-LightClipWindowHandle $parts[1] } else { $script:ZERO_HANDLE }
+
+  if ($focusedWindow -ne $script:ZERO_HANDLE -and -not [LightClip.NativeMethods]::IsWindow($focusedWindow)) {
+    $focusedWindow = $script:ZERO_HANDLE
+  }
+
+  return @{ TopLevel = $topLevelWindow; Focused = $focusedWindow }
 }
 
 function Invoke-LightClipActivateWindow {
   param([string] $WindowHandle)
-  [int64] $handleValue = 0
-  if (-not [Int64]::TryParse($WindowHandle, [ref] $handleValue) -or $handleValue -le 0) {
+  $target = Split-LightClipTargetWindow $WindowHandle
+  [System.IntPtr] $windowHandle = $target.TopLevel
+  [System.IntPtr] $focusedWindow = $target.Focused
+  if ($windowHandle -eq $script:ZERO_HANDLE -or -not [LightClip.NativeMethods]::IsWindow($windowHandle)) {
     return
   }
 
-  $windowHandle = [IntPtr]::new($handleValue)
-  if (-not [LightClip.NativeMethods]::IsWindow($windowHandle)) {
-    return
-  }
+  $currentThreadId = [LightClip.NativeMethods]::GetCurrentThreadId()
+  $targetThreadId = Get-LightClipWindowThreadId $windowHandle
+  $foregroundThreadId = Get-LightClipWindowThreadId ([LightClip.NativeMethods]::GetForegroundWindow())
+  $attachedTarget = $false
+  $attachedForeground = $false
 
-  [void] [LightClip.NativeMethods]::ShowWindowAsync($windowHandle, $script:SW_RESTORE)
-  Start-Sleep -Milliseconds 40
-  [LightClip.NativeMethods]::keybd_event($script:VK_MENU, 0, 0, [UIntPtr]::Zero)
-  [LightClip.NativeMethods]::keybd_event($script:VK_MENU, 0, $script:KEYEVENTF_KEYUP, [UIntPtr]::Zero)
-  [void] [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)
+  try {
+    # Temporarily join input queues so Windows allows the background helper to restore focus to the captured app.
+    if ($targetThreadId -ne 0 -and $targetThreadId -ne $currentThreadId) {
+      $attachedTarget = [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $targetThreadId, $true)
+    }
+    if ($foregroundThreadId -ne 0 -and $foregroundThreadId -ne $currentThreadId -and $foregroundThreadId -ne $targetThreadId) {
+      $attachedForeground = [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $foregroundThreadId, $true)
+    }
+
+    [void] [LightClip.NativeMethods]::ShowWindowAsync($windowHandle, $script:SW_RESTORE)
+    Start-Sleep -Milliseconds 40
+    [void] [LightClip.NativeMethods]::BringWindowToTop($windowHandle)
+    [void] [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)
+    if ($focusedWindow -ne $script:ZERO_HANDLE) {
+      [void] [LightClip.NativeMethods]::SetFocus($focusedWindow)
+    }
+  } finally {
+    if ($attachedForeground) {
+      [void] [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $foregroundThreadId, $false)
+    }
+    if ($attachedTarget) {
+      [void] [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $targetThreadId, $false)
+    }
+  }
 }
 
 function Invoke-LightClipPaste {
@@ -124,7 +208,7 @@ while ($true) {
   try {
     switch ($command) {
       'capture' {
-        Write-LightClipResponse $requestId 'ok' (Get-LightClipForegroundWindow)
+        Write-LightClipResponse $requestId 'ok' (Get-LightClipForegroundTarget)
       }
       'paste' {
         Invoke-LightClipPaste $payload
@@ -157,6 +241,18 @@ let pasteHelperStdoutBuffer = ''
 let pasteHelperRequestId = 0
 let pasteTargetWindowHandle: string | null = null
 const pasteHelperRequests = new Map<number, PasteHelperRequest>()
+
+function debugPasteFlow(event: string, details: Record<string, unknown> = {}): void {
+  const debugLogPath = process.env.LIGHTCLIP_PASTE_DEBUG_LOG?.trim()
+  if (!debugLogPath) {
+    return
+  }
+
+  const line = JSON.stringify({ time: new Date().toISOString(), event, ...details }) + '\n'
+  void appendFile(debugLogPath, line, 'utf8').catch(() => {
+    // Debug logging must never affect clipboard or paste delivery.
+  })
+}
 
 interface ClipboardSnapshot {
   signature: string
@@ -857,9 +953,12 @@ async function rememberPasteTargetWindow(): Promise<void> {
   }
 
   try {
+    debugPasteFlow('capture:start')
     const windowHandle = await sendPasteHelperCommand('capture', '', 500)
-    pasteTargetWindowHandle = isValidWindowHandle(windowHandle) ? windowHandle : null
+    pasteTargetWindowHandle = normalizePasteTargetWindowHandle(windowHandle)
+    debugPasteFlow('capture:result', { windowHandle, pasteTargetWindowHandle })
   } catch (error) {
+    debugPasteFlow('capture:error', { error: error instanceof Error ? error.message : String(error) })
     console.warn('Failed to capture paste target window.', error)
   }
 }
@@ -869,10 +968,17 @@ async function sendPasteCommandToForegroundApp(): Promise<void> {
   pasteTargetWindowHandle = null
 
   try {
+    debugPasteFlow('paste:start', { targetWindowHandle })
     await sendPasteHelperCommand('paste', targetWindowHandle ?? '', 1500)
+    debugPasteFlow('paste:done', { targetWindowHandle })
   } catch (error) {
+    debugPasteFlow('paste:error', { targetWindowHandle, error: error instanceof Error ? error.message : String(error) })
     console.warn('Failed to send paste command through the warm helper.', error)
     await runOneShotPasteHelper(targetWindowHandle).catch((fallbackError) => {
+      debugPasteFlow('paste:fallback-error', {
+        targetWindowHandle,
+        error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+      })
       console.warn('Failed to paste into foreground app.', fallbackError)
     })
   }
@@ -903,6 +1009,7 @@ async function ensurePasteHelperProcess(): Promise<void> {
     helper.stderr.on('data', (chunk) => {
       const message = chunk.toString().trim()
       if (message) {
+        debugPasteFlow('helper:stderr', { message })
         console.warn('LightClip paste helper stderr:', message)
       }
     })
@@ -1071,6 +1178,13 @@ function rejectPasteHelperRequests(error: Error): void {
 function isValidWindowHandle(value: string): boolean {
   const trimmed = value.trim()
   return /^\d+$/.test(trimmed) && trimmed !== '0'
+}
+
+function normalizePasteTargetWindowHandle(value: string): string | null {
+  // The helper returns "top-level HWND;focused child HWND" so paste can restore both app and control focus.
+  const targetSpec = value.trim()
+  const [topLevelWindow] = targetSpec.split(';', 1)
+  return isValidWindowHandle(topLevelWindow) ? targetSpec : null
 }
 
 /**
