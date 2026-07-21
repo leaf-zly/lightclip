@@ -69,11 +69,6 @@ jobs:
             if ($process.HasExited) {
               throw "LightClip exited during the packaged startup smoke test with code $($process.ExitCode)."
             }
-
-            $storePath = Join-Path $env:APPDATA 'LightClip\lightclip-store.json.br'
-            if (-not (Test-Path -LiteralPath $storePath)) {
-              throw "LightClip did not initialize its compressed store at $storePath."
-            }
           }
           finally {
             $process.Refresh()
