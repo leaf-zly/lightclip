@@ -254,18 +254,7 @@ struct ClipboardStore {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
-    .plugin(
-      tauri_plugin_global_shortcut::Builder::new()
-        .with_handler(|app, _shortcut, event| {
-          if event.state == ShortcutState::Pressed {
-            let runtime = app.state::<AppRuntime>();
-            if let Err(error) = toggle_panel_impl(app, &runtime) {
-              log::error!("Failed to toggle LightClip from the global shortcut: {error}");
-            }
-          }
-        })
-        .build(),
-    )
+    .plugin(tauri_plugin_global_shortcut::Builder::new().build())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_log::Builder::default().build())
     .setup(|app| {
@@ -287,9 +276,7 @@ pub fn run() {
         .lock()
         .map(|store| store.state.settings.global_shortcut.clone())
         .unwrap_or_else(|_| default_settings().global_shortcut);
-      if let Err(error) = replace_global_shortcut(app.handle(), &global_shortcut) {
-        log::error!("Failed to register global shortcut {global_shortcut}: {error}");
-      }
+      replace_global_shortcut(app.handle(), &global_shortcut)?;
       start_clipboard_watcher(app.handle().clone(), runtime.clone());
       create_tray(app.handle())?;
 
@@ -621,8 +608,23 @@ fn toggle_panel_impl(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()
 fn replace_global_shortcut(app: &AppHandle, shortcut: &str) -> anyhow::Result<()> {
   let manager = app.global_shortcut();
   manager.unregister_all()?;
-  manager.register(shortcut.trim())?;
+  manager.on_shortcut(shortcut.trim(), handle_global_shortcut)?;
   Ok(())
+}
+
+fn handle_global_shortcut(
+  app: &AppHandle,
+  _shortcut: &tauri_plugin_global_shortcut::Shortcut,
+  event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+  if event.state != ShortcutState::Pressed {
+    return;
+  }
+
+  let runtime = app.state::<AppRuntime>();
+  if let Err(error) = toggle_panel_impl(app, &runtime) {
+    log::error!("Failed to toggle LightClip from the global shortcut: {error}");
+  }
 }
 
 #[tauri::command]

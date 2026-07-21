@@ -29,6 +29,12 @@ public static class LightClipShortcutProbe
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint virtualKey);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnregisterHotKey(IntPtr window, int id);
+
     public static IntPtr FindMainWindow(uint processId)
     {
         IntPtr result = IntPtr.Zero;
@@ -63,6 +69,21 @@ public static class LightClipShortcutProbe
         keybd_event(v, 0, keyUp, UIntPtr.Zero);
         keybd_event(alt, 0, keyUp, UIntPtr.Zero);
     }
+
+    public static bool IsAltVRegistered()
+    {
+        const int probeId = 0x4C43;
+        const uint altNoRepeat = 0x4001;
+        const uint v = 0x56;
+        if (RegisterHotKey(IntPtr.Zero, probeId, altNoRepeat, v))
+        {
+            UnregisterHotKey(IntPtr.Zero, probeId);
+            return false;
+        }
+
+        const int hotkeyAlreadyRegistered = 1409;
+        return Marshal.GetLastWin32Error() == hotkeyAlreadyRegistered;
+    }
 }
 '@
 
@@ -89,6 +110,9 @@ try {
   }
   if ([LightClipShortcutProbe]::IsWindowVisible($window)) {
     throw 'LightClip ignored --hidden during the shortcut smoke test.'
+  }
+  if (-not [LightClipShortcutProbe]::IsAltVRegistered()) {
+    throw 'The packaged LightClip process did not register Alt+V with Windows.'
   }
 
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
