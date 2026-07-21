@@ -1,0 +1,104 @@
+name: Tauri 2 Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/tauri-2.0
+    tags:
+      - v2.*
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package Tauri Windows Assets
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck Sources
+        run: pnpm typecheck
+
+      - name: Build Renderer
+        run: pnpm build:renderer
+
+      - name: Verify Dependency Lock
+        run: cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml | Out-Null
+
+      - name: Package Tauri App
+        run: pnpm tauri:build
+
+      - name: Smoke Test Packaged App
+        shell: pwsh
+        run: |
+          $executable = Resolve-Path 'src-tauri/target/release/lightclip.exe'
+          $process = Start-Process -FilePath $executable -ArgumentList '--hidden' -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "LightClip exited during the packaged startup smoke test with code $($process.ExitCode)."
+            }
+
+            $storePath = Join-Path $env:APPDATA 'LightClip\lightclip-store.json.br'
+            if (-not (Test-Path -LiteralPath $storePath)) {
+              throw "LightClip did not initialize its compressed store at $storePath."
+            }
+          }
+          finally {
+            $process.Refresh()
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
+
+      - name: Upload Dependency Lock
+        uses: actions/upload-artifact@v7
+        with:
+          name: lightclip-tauri-2-cargo-lock
+          path: src-tauri/Cargo.lock
+          if-no-files-found: error
+
+      - name: Upload Tauri Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: lightclip-tauri-2-windows
+          path: |
+            src-tauri/target/release/lightclip.exe
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v2.')
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: RELEASE_NOTES.md
+          files: |
+            src-tauri/target/release/lightclip.exe
+            src-tauri/target/release/bundle/nsis/*.exe

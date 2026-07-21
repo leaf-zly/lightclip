@@ -1,28 +1,39 @@
-# LightClip v1.2.5
+# LightClip v2.0.0
+
+LightClip 2 replaces the bundled Electron runtime with Tauri 2 and Windows WebView2. The result is a substantially smaller Windows package while preserving the local clipboard workflow, tray behavior, appearance controls, and optional image/file history.
 
 ## Highlights
 
-- Paste-after-copy now restores both the app window and the focused control captured before LightClip opens.
-- This fixes cases where the selected history item was copied successfully, but `Ctrl + V` stayed on LightClip or another foreground window.
-- The PowerShell helper now uses Windows input-thread attachment for focus restoration instead of relying on a plain foreground-window call.
+- Smaller Tauri 2 application and NSIS installer using the system WebView2 runtime.
+- Text, PNG image, and native Windows file-drop clipboard history; image and file capture remain off by default.
+- Search, filters, pinning, previews, retention limits, import/export, and configurable compressed storage.
+- System/light/dark appearance and five full-interface accent themes.
+- Tray controls, `Alt + V`, current-user startup registration, privacy exclusions, and optional paste-after-select.
+- Official binaries built and published by GitHub Actions from this tagged source revision.
 
-## Download
+## Upgrade Notes
 
-- `LightClip Setup 1.2.5.exe`: installer for daily use.
-- `LightClip 1.2.5.exe`: portable build that can run directly.
+LightClip 2 stores data under `%APPDATA%\LightClip` by default. Readable plain Brotli and legacy JSON stores are migrated automatically.
+
+Electron 1.x encrypted stores cannot be decrypted directly by Tauri 2.0. Before upgrading, export history to JSON from LightClip 1.x, then import the JSON file from LightClip 2 settings. Export files are unencrypted and should be protected accordingly.
+
+## Downloads
+
+- `LightClip_*_setup.exe`: recommended current-user installer.
+- `lightclip.exe`: standalone application binary.
+
+The installer downloads Microsoft's WebView2 bootstrapper only when the runtime is missing.
 
 ## Verification
 
-- `pnpm typecheck`
-- `pnpm build`
-- `pnpm dist`
-- Full source E2E with an isolated LightClip data directory, a real WinForms textbox target, real `Alt + V`, and verified pasted textbox content.
-- Full packaged E2E against `release\win-unpacked\LightClip.exe` with the same target-input flow.
+- Source integrity check passed.
+- Vue and TypeScript type checks passed with `pnpm typecheck`.
+- Renderer production build passed with `pnpm build`.
+- Rust compilation, NSIS packaging, and a packaged startup/store-initialization smoke test run on GitHub's `windows-latest` runner before publication.
 
-## Notes
+## Security Notes
 
-- The app is not code signed yet, so Windows may show an unknown publisher warning.
-- Image history and file history remain opt-in because clipboard data can be sensitive.
-- Encrypted stores are bound to the current Windows account and may not decrypt under another account.
-- Manual update checks contact GitHub Releases only when clicked.
-- Exported JSON files contain clipboard history in plain text/data URLs, so keep exports private.
+- Clipboard history remains local and no telemetry is included.
+- Manual update checks contact the LightClip GitHub Releases API.
+- Release binaries are not Authenticode signed yet. Windows SmartScreen or antivirus products may show an unknown-publisher warning or false positive despite the public build provenance.
+- Paste-after-select and native file restoration depend on Windows PowerShell and can be restricted by enterprise policy.

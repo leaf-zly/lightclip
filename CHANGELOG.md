@@ -6,9 +6,38 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.0.0] - 2026-07-21
+
+### Added
+
+- Added a Tauri 2 Windows runtime backed by the system WebView2 installation.
+- Added GitHub-hosted Windows packaging with branch artifacts and automatic `v2.*` GitHub Release publication.
+- Added Tauri clipboard capture and restoration for text, optional PNG images, and optional native file-drop lists.
+- Added Tauri tray controls, current-user startup registration, global shortcut handling, update checks, and storage-directory management.
+- Added normalized legacy-store parsing, backup recovery, corrupt-store quarantine, and same-directory temporary writes.
+
+### Changed
+
+- Reduced the installed runtime footprint by removing Electron from the 2.0 application package.
+- Moved official native packaging to GitHub Actions so released binaries are traceable to public source and workflow logs.
+- Changed the default data directory to `%APPDATA%\LightClip` while retaining readable legacy Tauri preview data.
+- Changed `pnpm build` to perform source and renderer verification without generating a native executable.
+
 ### Fixed
 
-- Avoid restoring normal or maximized target windows during paste-after-copy focus recovery, preventing size changes and reducing visible flicker.
+- Avoided restoring normal or maximized target windows during paste-after-copy focus recovery, preventing size changes and reducing visible flicker.
+
+### Security
+
+- Image and file capture remain opt-in.
+- External URL opening remains restricted to the LightClip GitHub repository.
+- Tauri 2.0 does not expose Electron account-backed store encryption; encrypted 1.x users must export JSON before upgrading.
+
+### Verified
+
+- `pnpm typecheck`
+- `pnpm build`
+- GitHub-hosted Rust compilation, NSIS packaging, and packaged startup/store-initialization smoke testing.
 
 ## [1.2.5] - 2026-07-08
 
@@ -254,6 +283,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.0
 [1.2.5]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.5
 [1.2.4]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.4
 [1.2.3]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.3

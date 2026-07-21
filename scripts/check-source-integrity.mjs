@@ -7,9 +7,9 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true })
 
 /**
- * Critical source files that must remain plain UTF-8 text before TypeScript
- * compilation. The required tokens make accidental binary or stale generated
- * content fail with a focused diagnostic instead of noisy TypeScript parser
+ * Critical source and configuration files that must remain plain UTF-8 text
+ * before compilation. Required tokens make accidental binary or stale
+ * generated content fail with a focused diagnostic instead of noisy parser
  * errors.
  */
 const criticalSources = [
@@ -30,6 +30,18 @@ const criticalSources = [
     path: 'src/main/index.ts',
     requiredTokens: ['selectStorageDirectory', 'resetStorageDirectory', 'openStorageDirectory', 'registerStoredGlobalShortcut', 'readForegroundProcessName', 'checkForUpdates'],
   },
+  {
+    path: 'src-tauri/src/lib.rs',
+    requiredTokens: ['pub fn run()', 'start_clipboard_watcher', 'parse_persisted_store', 'create_tray', 'write_atomic'],
+  },
+  {
+    path: 'src-tauri/tauri.conf.json',
+    requiredTokens: ['dev.lightclip.desktop', 'downloadBootstrapper', 'nsis'],
+  },
+  {
+    path: '.github/workflows/tauri-2-build.yml',
+    requiredTokens: ['pnpm install --frozen-lockfile', 'pnpm tauri:build', 'Publish GitHub Release'],
+  },
 ]
 
 /**
@@ -44,7 +56,7 @@ async function readVerifiedText(relativePath) {
   const bytes = await readFile(absolutePath)
 
   if (bytes.includes(0)) {
-    throw new Error(`${relativePath} contains NUL bytes and is not valid TypeScript text.`)
+    throw new Error(`${relativePath} contains NUL bytes and is not valid source text.`)
   }
 
   let text

@@ -1,73 +1,70 @@
 # LightClip
 
-LightClip is a lightweight Windows clipboard history app built with Electron, Vue 3, TypeScript, Vite, and pnpm. It stays in the tray, opens with `Alt + V`, and helps you search, pin, delete, and reuse copied content without sending clipboard data to a server.
+LightClip is a lightweight, local-first clipboard history app for Windows. Version 2.0 uses Tauri 2, Vue 3, TypeScript, and the system WebView2 runtime, replacing the bundled Electron runtime used by LightClip 1.x.
 
-> Current release: `v1.2.5`. This patch restores the original app and focused control before paste-after-copy sends `Ctrl + V`.
+Clipboard data stays on your machine. LightClip does not include telemetry, cloud sync, or a background network service. The only network request is a manual update check against GitHub Releases.
 
-## Project Status
-
-LightClip is stable for the local Windows clipboard-history workflow. Image and file history remain opt-in features that should be enabled only when you are comfortable storing that data locally.
+> Current version: `v2.0.0`. Windows packages are built by GitHub Actions and published through GitHub Releases.
 
 ## Features
 
-- Text clipboard history with deduplication, search, type filters, pinning, preview, deletion, and bulk cleanup for unpinned items.
-- Optional image history for screenshots and image clipboard payloads.
-- Optional file history for file paths copied from Windows Explorer.
-- Local-only Brotli-compressed persistence with a configurable storage directory; no sync service or telemetry is included.
-- Automatic local backup recovery for the compressed store.
-- Optional Windows account-backed encryption for the local store.
-- Foreground app exclusions for password managers or other sensitive tools.
-- Optional paste-after-select behavior for faster reuse.
-- Staged rendering for large history lists so startup and filtering stay responsive.
+- Text history with deduplication, search, filters, pinning, preview, deletion, and bulk cleanup.
+- Optional image history with PNG preview and clipboard restoration.
+- Optional file history with native Windows file-drop restoration and text fallback.
+- Brotli-compressed local storage with a configurable data directory.
+- Automatic backup recovery and unreadable-store quarantine.
+- Per-app privacy exclusions for password managers and other sensitive tools.
+- Optional paste-after-select behavior that returns input to the previous foreground window.
+- Configurable history limits, retention, image size, and file-count limits.
+- Import and export through portable JSON backups.
+- System, light, and dark appearance modes with five full-app accent themes.
+- Tray operation, current-user startup registration, and a configurable global shortcut.
 - Manual update checks against GitHub Releases.
-- Tray-first behavior: closing the window hides it to the system tray.
-- Startup registration for the current Windows user without administrator privileges.
-- Global shortcut support, defaulting to `Alt + V`.
-- Compact custom title bar with native window controls and no traditional menu bar.
-- Theme accent switching: Mint, Blue, Violet, Rose, and Amber.
-- Data management tools for JSON import/export, retention days, category cleanup, store size visibility, and storage location changes.
+
+Image and file capture are disabled by default because those clipboard formats can contain sensitive or high-volume data.
 
 ## Download
 
-Download the latest build from [GitHub Releases](https://github.com/leaf-zly/lightclip/releases).
+Download LightClip only from [GitHub Releases](https://github.com/leaf-zly/lightclip/releases). Version 2 assets are generated on GitHub-hosted Windows runners.
 
-| Asset | Use case |
+| Asset | Purpose |
 | --- | --- |
-| `LightClip Setup x.y.z.exe` | Installer for day-to-day use. |
-| `LightClip x.y.z.exe` | Portable build that can be run directly. |
+| `LightClip_*_setup.exe` | Recommended current-user NSIS installer. |
+| `lightclip.exe` | Standalone application binary for advanced or portable use. |
+
+LightClip is not currently code signed. Windows SmartScreen or third-party antivirus products may therefore show an unknown-publisher warning or a false positive. Publishing from GitHub makes every released binary traceable to a public commit and workflow, but it does not replace Authenticode signing.
 
 ## Requirements
 
-- Windows 10 or Windows 11.
-- PowerShell available on the system if you want file history to paste back as native Windows file drops.
-- No network service is required after the app is installed.
+- Windows 10 or Windows 11, 64-bit.
+- Microsoft Edge WebView2 Runtime. The installer downloads the official bootstrapper when WebView2 is missing.
+- Windows PowerShell 5.1 for native file-drop restoration and Windows focus integration.
 
 ## Quick Start
 
-1. Install or run LightClip from a release asset.
-2. Copy text as usual.
-3. Press `Alt + V` to open LightClip.
-4. Search or use `Up` / `Down` to select an item.
-5. Press `Enter` or double-click an item to copy it back to the clipboard.
+1. Install LightClip from GitHub Releases.
+2. Copy text normally.
+3. Press `Alt + V` to open the panel.
+4. Search or use `Up` and `Down` to select an item.
+5. Press `Enter` or double-click to copy it back.
+
+Closing the panel hides it to the tray. Left-click the tray icon to reopen it; right-click for Open and Exit commands.
 
 ## Settings
 
-Open the settings panel from the top-right toolbar.
-
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Startup | Off | Registers LightClip for the current Windows user. |
-| Image history | Off | Stores PNG data URLs locally; can increase data size quickly. |
-| File history | Off | Stores file paths, not file contents. |
-| Local encryption | On when available | Uses Electron safeStorage backed by the current Windows account. |
-| Excluded apps | Empty | Process names listed here are not captured when they are in the foreground. |
-| Paste after copy | Off | Sends `Ctrl + V` after selecting a history item. |
-| Check updates | Manual | Checks GitHub Releases only when clicked. |
+| Start with Windows | Off | Writes a current-user `HKCU` startup entry; no administrator access is required. |
+| Image history | Off | Stores PNG data URLs and can grow the local store quickly. |
+| File history | Off | Stores file paths only, never file contents. |
+| Excluded apps | Empty | Skips capture while a listed process is in the foreground. |
+| Paste after copy | Off | Restores the previous target and sends `Ctrl + V`. |
 | History limit | `300` | Applies to non-pinned records. |
-| Global shortcut | `Alt + V` | Re-registers when changed. |
+| Retention | Forever | Optional age-based cleanup for non-pinned records. |
+| Global shortcut | `Alt + V` | Re-registers after the setting changes. |
 | Appearance | System | Supports system, light, and dark modes. |
-| Theme accent | Mint | Changes chrome, focus, switch, and selected item accents. |
-| Storage location | Electron `userData` | Stores `lightclip-store.json.br`; can be moved from settings. |
+| Accent | Mint | Mint, Blue, Violet, Rose, or Amber across the full interface. |
+| Storage location | `%APPDATA%\LightClip` | Can be moved from Settings. |
 
 ## Keyboard Shortcuts
 
@@ -75,91 +72,69 @@ Open the settings panel from the top-right toolbar.
 | --- | --- |
 | `Alt + V` | Show or hide LightClip. |
 | `Up` / `Down` | Move selection. |
-| `Enter` | Copy selected item. |
-| `Esc` | Hide the window. |
+| `Enter` | Copy the selected item. |
+| `Esc` | Hide the panel. |
 
-## Privacy And Data
+## Data And Privacy
 
-LightClip is designed as a local-first utility. Clipboard history is stored on the same machine and is not uploaded by the app.
-
-Important boundaries:
-
-- Text history is enabled by default.
-- Image and file history are disabled by default because they can contain sensitive screenshots, design files, identity documents, or private file paths.
-- File history stores paths only; it does not copy file contents into the LightClip database.
-- Do not enable clipboard history while handling passwords, API tokens, private keys, personal identity numbers, or other secrets unless you understand the local storage risk.
-
-See [Privacy And Data Handling](docs/PRIVACY.md) for the full policy.
-
-## Data Location
-
-LightClip stores data in the current user's Electron `userData` directory by default. You can open or change the active storage directory from Settings.
-
-Primary data file:
+The active history file is:
 
 ```text
-lightclip-store.json.br
+%APPDATA%\LightClip\lightclip-store.json.br
 ```
 
-The store uses Brotli compression at maximum quality. When Windows account-backed encryption is available and enabled, LightClip encrypts the compressed payload before writing it. Older `lightclip-store.json` files are read and migrated to the compressed store automatically. LightClip also keeps `lightclip-store.json.br.bak` as a local last-known-readable backup and restores from it if the primary store becomes unreadable.
+LightClip writes compact JSON through Brotli compression and keeps `lightclip-store.json.br.bak` as a last-known-readable backup. A custom directory pointer is stored in `%APPDATA%\LightClip\lightclip-storage.json`.
 
-Custom storage directory configuration remains in Electron `userData`:
+Version 2.0 does not expose the Electron 1.x account-encryption option. Before upgrading from an encrypted 1.x store, export history as JSON from LightClip 1.x, then import it into 2.0. Plain 1.x Brotli and legacy JSON stores are migrated automatically when readable.
 
-```text
-lightclip-storage.json
-```
+Exports are plain JSON. Treat them as sensitive files. See [Privacy And Data Handling](docs/PRIVACY.md) for the complete data model and security boundaries.
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 22+ or 24+.
-- pnpm 11+.
-- Windows 10/11 for full clipboard and packaging verification.
+- Node.js 24+
+- pnpm 11+
+- Rust stable with the MSVC target, only when compiling Tauri locally
+- Windows 10/11 and WebView2 for runtime testing
 
-### Install
-
-```powershell
-pnpm install
-```
-
-### Run In Development
+### Install And Check
 
 ```powershell
-pnpm dev
-```
-
-or:
-
-```powershell
-.\Start-LightClip.ps1
-```
-
-### Quality Checks
-
-```powershell
+pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 ```
 
-### Package Windows Builds
+`pnpm build` performs source-integrity checks, TypeScript checks, and a renderer production build. It does not generate a Windows executable.
+
+### Development Runtime
 
 ```powershell
-pnpm dist
+pnpm tauri:dev
 ```
 
-`electron-builder` is configured to use the local `node_modules/electron/dist` runtime and a fixed NSIS toolchain cache to reduce release-time dependency on GitHub-hosted binary downloads.
+### Packaging
+
+Official Windows packages are built by [Tauri 2 Build](.github/workflows/tauri-2-build.yml). Pushes to `codex/tauri-2.0` upload a workflow artifact; a `v2.*` tag also publishes the assets to GitHub Releases.
+
+```powershell
+gh workflow run tauri-2-build.yml --ref codex/tauri-2.0
+```
+
+`pnpm dist` remains available for trusted local Tauri packaging, but local native builds can attract heuristic antivirus scanning. Maintainers should use the GitHub workflow for official artifacts.
+
+Legacy Electron source and `electron:*` scripts remain temporarily available for 1.x maintenance; they are not included in the 2.0 package.
 
 ## Architecture
 
-LightClip uses a small Electron split:
+- `src-tauri`: Tauri commands, clipboard polling, tray/startup integration, Windows paste integration, persistence, and packaging configuration.
+- `src/renderer`: Vue 3 interface and the runtime bridge shared by Tauri 2 and legacy Electron 1.x.
+- `src/shared`: renderer/runtime contracts.
+- `src/main` and `src/preload`: legacy Electron 1.x implementation retained during migration.
+- `.github/workflows/tauri-2-build.yml`: reproducible Windows packaging and tagged release publication.
 
-- `src/main`: Electron main process, tray integration, global shortcut, clipboard polling, persistence, and packaging-facing behavior.
-- `src/preload`: narrow context bridge exposed to the renderer.
-- `src/renderer`: Vue 3 interface for searching, filtering, preview, settings, history actions, and theme accents.
-- `src/shared`: shared IPC and state types.
-
-See [Architecture](docs/ARCHITECTURE.md) for more detail.
+See [Architecture](docs/ARCHITECTURE.md) for runtime boundaries and data flow.
 
 ## Documentation
 
@@ -176,14 +151,15 @@ See [Architecture](docs/ARCHITECTURE.md) for more detail.
 
 ## Known Limitations
 
-- Native file-paste restoration depends on the Windows PowerShell STA Clipboard API. If PowerShell is disabled by policy, LightClip falls back to copying file paths as text and HTML.
-- Image history is stored as PNG data URLs and should be used with sensible history limits.
+- Release binaries are not Authenticode signed yet.
+- Native file restoration and paste-after-select depend on Windows PowerShell and desktop focus restrictions.
+- Encrypted Electron 1.x stores require a JSON export/import migration.
 - Cloud sync is not implemented.
-- The project does not yet include automated end-to-end tests.
+- Native Windows integration is compiled in GitHub Actions; this repository does not yet have automated desktop end-to-end coverage for Tauri.
 
 ## Security
 
-Please do not report exploitable vulnerabilities in public issues. Read [SECURITY.md](SECURITY.md) before sharing details.
+Do not report exploitable vulnerabilities in public issues. Follow [SECURITY.md](SECURITY.md) for private reporting guidance.
 
 ## License
 
