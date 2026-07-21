@@ -14,7 +14,7 @@ This patch fixes clipboard metadata display and removes the multi-second delay w
 
 - Rust tests verify renderer-facing field names and 2.0.0 data migration.
 - The native target-window capture path is checked to complete within 250 ms on GitHub's Windows runner.
-- Source integrity, Vue/TypeScript checks, renderer production build, Tauri packaging, and packaged startup/store initialization run on GitHub Actions.
+- Source integrity, Vue/TypeScript checks, renderer production build, Tauri packaging, and a packaged process-liveness smoke test run on GitHub Actions.
 
 ## Downloads
 
