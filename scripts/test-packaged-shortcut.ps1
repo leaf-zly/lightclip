@@ -111,6 +111,14 @@ try {
   if ([LightClipShortcutProbe]::IsWindowVisible($window)) {
     throw 'LightClip ignored --hidden during the shortcut smoke test.'
   }
+  $registrationDeadline = [DateTime]::UtcNow.AddSeconds(15)
+  while (-not [LightClipShortcutProbe]::IsAltVRegistered() -and [DateTime]::UtcNow -lt $registrationDeadline) {
+    $process.Refresh()
+    if ($process.HasExited) {
+      throw "LightClip exited before registering Alt+V with code $($process.ExitCode)."
+    }
+    Start-Sleep -Milliseconds 100
+  }
   if (-not [LightClipShortcutProbe]::IsAltVRegistered()) {
     throw 'The packaged LightClip process did not register Alt+V with Windows.'
   }

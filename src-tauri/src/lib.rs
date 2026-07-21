@@ -261,14 +261,11 @@ pub fn run() {
       let mut store = ClipboardStore::new(default_storage_directory())?;
       store.load()?;
       apply_launch_at_login(store.state.settings.launch_at_login);
-      let initial_clipboard_signature = read_clipboard_snapshot(&store.state.settings)
-        .map(|snapshot| snapshot.signature)
-        .unwrap_or_default();
 
       let runtime = AppRuntime {
         store: Arc::new(Mutex::new(store)),
         paste_target: Arc::new(Mutex::new(None)),
-        last_clipboard_signature: Arc::new(Mutex::new(initial_clipboard_signature)),
+        last_clipboard_signature: Arc::new(Mutex::new(String::new())),
       };
       app.manage(runtime.clone());
       let global_shortcut = runtime
@@ -277,6 +274,19 @@ pub fn run() {
         .map(|store| store.state.settings.global_shortcut.clone())
         .unwrap_or_else(|_| default_settings().global_shortcut);
       replace_global_shortcut(app.handle(), &global_shortcut)?;
+
+      // Register the shortcut before clipboard inspection so optional file
+      // format probing cannot delay or prevent the app's primary entry point.
+      let initial_clipboard_signature = runtime
+        .store
+        .lock()
+        .ok()
+        .and_then(|store| read_clipboard_snapshot(&store.state.settings).ok())
+        .map(|snapshot| snapshot.signature)
+        .unwrap_or_default();
+      if let Ok(mut signature) = runtime.last_clipboard_signature.lock() {
+        *signature = initial_clipboard_signature;
+      }
       start_clipboard_watcher(app.handle().clone(), runtime.clone());
       create_tray(app.handle())?;
 
