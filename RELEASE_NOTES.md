@@ -29,7 +29,7 @@ The installer downloads Microsoft's WebView2 bootstrapper only when the runtime 
 - Source integrity check passed.
 - Vue and TypeScript type checks passed with `pnpm typecheck`.
 - Renderer production build passed with `pnpm build`.
-- Rust compilation and NSIS packaging run on GitHub's `windows-latest` runner before publication.
+- Rust compilation, NSIS packaging, and a packaged startup/store-initialization smoke test run on GitHub's `windows-latest` runner before publication.
 
 ## Security Notes
 

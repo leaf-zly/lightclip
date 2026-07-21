@@ -48,8 +48,35 @@ jobs:
       - name: Build Renderer
         run: pnpm build:renderer
 
+      - name: Verify Dependency Lock
+        run: cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml | Out-Null
+
       - name: Package Tauri App
         run: pnpm tauri:build
+
+      - name: Smoke Test Packaged App
+        shell: pwsh
+        run: |
+          $executable = Resolve-Path 'src-tauri/target/release/lightclip.exe'
+          $process = Start-Process -FilePath $executable -ArgumentList '--hidden' -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "LightClip exited during the packaged startup smoke test with code $($process.ExitCode)."
+            }
+
+            $storePath = Join-Path $env:APPDATA 'LightClip\lightclip-store.json.br'
+            if (-not (Test-Path -LiteralPath $storePath)) {
+              throw "LightClip did not initialize its compressed store at $storePath."
+            }
+          }
+          finally {
+            $process.Refresh()
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
 
       - name: Upload Dependency Lock
         uses: actions/upload-artifact@v7

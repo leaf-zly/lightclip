@@ -37,7 +37,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 - `pnpm typecheck`
 - `pnpm build`
-- GitHub-hosted Rust compilation and NSIS packaging are required before the release tag is published.
+- GitHub-hosted Rust compilation, NSIS packaging, and packaged startup/store-initialization smoke testing.
 
 ## [1.2.5] - 2026-07-08
 
