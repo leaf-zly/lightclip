@@ -6,6 +6,21 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.0.1] - 2026-07-21
+
+### Fixed
+
+- Fixed Tauri clipboard metadata serialization so timestamps, copy counts, image data URLs, and image byte sizes reach the renderer with camelCase field names.
+- Migrated snake_case clipboard metadata written by 2.0.0 without losing timestamps or copy counts.
+- Replaced synchronous PowerShell target-window capture with direct User32 calls, removing the multi-second delay before the shortcut panel appears.
+- Added a defensive renderer fallback so malformed timestamps display as `时间未知` instead of `NaN/NaN NaN:NaN`.
+
+### Verified
+
+- Rust serialization and legacy-data migration tests.
+- Native shortcut-path target capture completes within 250 ms in the GitHub Windows test environment.
+- GitHub-hosted typecheck, renderer build, Tauri packaging, and packaged startup smoke test.
+
 ## [2.0.0] - 2026-07-21
 
 ### Added
@@ -283,6 +298,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.1
 [2.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.0
 [1.2.5]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.5
 [1.2.4]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.4

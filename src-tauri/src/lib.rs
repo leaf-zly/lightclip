@@ -1,6 +1,8 @@
 use arboard::{Clipboard, ImageData};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use std::ffi::c_void;
 use std::{
   borrow::Cow,
   collections::HashSet,
@@ -31,6 +33,40 @@ const LEGACY_TAURI_DATA_DIRECTORY_NAME: &str = "lightclip-electron";
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const MAX_TEMPORARY_PAUSE_MS: i64 = DAY_MS;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(windows)]
+type WindowHandle = *mut c_void;
+
+#[cfg(windows)]
+#[repr(C)]
+struct NativeRect {
+  left: i32,
+  top: i32,
+  right: i32,
+  bottom: i32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct GuiThreadInfo {
+  size: u32,
+  flags: u32,
+  active_window: WindowHandle,
+  focused_window: WindowHandle,
+  capture_window: WindowHandle,
+  menu_owner_window: WindowHandle,
+  move_size_window: WindowHandle,
+  caret_window: WindowHandle,
+  caret_rect: NativeRect,
+}
+
+#[cfg(windows)]
+#[link(name = "user32")]
+extern "system" {
+  fn GetForegroundWindow() -> WindowHandle;
+  fn GetWindowThreadProcessId(window: WindowHandle, process_id: *mut u32) -> u32;
+  fn GetGUIThreadInfo(thread_id: u32, info: *mut GuiThreadInfo) -> i32;
+}
 
 #[derive(Clone)]
 struct AppRuntime {
@@ -86,7 +122,7 @@ struct AppState {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum ClipboardItem {
   #[serde(rename = "text")]
   Text {
@@ -1363,25 +1399,45 @@ fn convert_png_frame_to_rgba(frame: &[u8], color_type: png::ColorType, bit_depth
 }
 
 fn capture_paste_target() -> anyhow::Result<String> {
-  let script = r#"
-$ErrorActionPreference = 'Stop'
-Add-Type -Namespace LightClip -Name NativeMethods -MemberDefinition @'
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
-  public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-  public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public RECT rcCaret; }
-'@
-$hwnd = [LightClip.NativeMethods]::GetForegroundWindow()
-[uint32]$processId = 0
-$threadId = [LightClip.NativeMethods]::GetWindowThreadProcessId($hwnd, [ref]$processId)
-$info = New-Object LightClip.NativeMethods+GUITHREADINFO
-$info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info)
-$focus = 0
-if ([LightClip.NativeMethods]::GetGUIThreadInfo($threadId, [ref]$info)) { $focus = $info.hwndFocus.ToInt64() }
-$hwnd.ToInt64().ToString() + ';' + $focus.ToString()
-"#;
-  run_powershell(script)
+  #[cfg(windows)]
+  {
+    // This runs on the shortcut hot path. Direct User32 calls avoid paying the
+    // multi-second PowerShell startup cost before the panel can be shown.
+    let foreground_window = unsafe { GetForegroundWindow() };
+    if foreground_window.is_null() {
+      anyhow::bail!("未找到前台窗口");
+    }
+
+    let mut process_id = 0;
+    let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, &mut process_id) };
+    let mut info = GuiThreadInfo {
+      size: std::mem::size_of::<GuiThreadInfo>() as u32,
+      flags: 0,
+      active_window: std::ptr::null_mut(),
+      focused_window: std::ptr::null_mut(),
+      capture_window: std::ptr::null_mut(),
+      menu_owner_window: std::ptr::null_mut(),
+      move_size_window: std::ptr::null_mut(),
+      caret_window: std::ptr::null_mut(),
+      caret_rect: NativeRect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+      },
+    };
+    if thread_id != 0 {
+      let _ = unsafe { GetGUIThreadInfo(thread_id, &mut info) };
+    }
+
+    return Ok(format!(
+      "{};{}",
+      foreground_window as isize, info.focused_window as isize
+    ));
+  }
+
+  #[cfg(not(windows))]
+  anyhow::bail!("仅 Windows 支持目标窗口捕获")
 }
 
 fn paste_to_target(target: &str) -> anyhow::Result<()> {
@@ -1513,9 +1569,9 @@ fn normalize_clipboard_item(value: serde_json::Value) -> Option<ClipboardItem> {
     .map(str::to_string)
     .unwrap_or_else(create_item_id);
   let pinned = object.get("pinned").and_then(serde_json::Value::as_bool).unwrap_or(false);
-  let copy_count = json_u64(object.get("copyCount")).min(u32::MAX as u64) as u32;
-  let created_at = normalize_timestamp(object.get("createdAt"), now);
-  let updated_at = normalize_timestamp(object.get("updatedAt"), now);
+  let copy_count = json_u64(object_field(object, "copyCount", "copy_count")).min(u32::MAX as u64) as u32;
+  let created_at = normalize_timestamp(object_field(object, "createdAt", "created_at"), now);
+  let updated_at = normalize_timestamp(object_field(object, "updatedAt", "updated_at"), now);
   let kind = object.get("kind").and_then(serde_json::Value::as_str).unwrap_or("text");
 
   match kind {
@@ -1532,7 +1588,7 @@ fn normalize_clipboard_item(value: serde_json::Value) -> Option<ClipboardItem> {
       })
     }
     "image" => {
-      let data_url = object.get("dataUrl")?.as_str()?.to_string();
+      let data_url = object_field(object, "dataUrl", "data_url")?.as_str()?.to_string();
       if !data_url.starts_with("data:image/png;base64,") {
         return None;
       }
@@ -1545,7 +1601,7 @@ fn normalize_clipboard_item(value: serde_json::Value) -> Option<ClipboardItem> {
         data_url,
         width: json_u64(object.get("width")).clamp(1, 100_000) as u32,
         height: json_u64(object.get("height")).clamp(1, 100_000) as u32,
-        byte_size: json_u64(object.get("byteSize")).clamp(1, 100 * 1024 * 1024) as usize,
+        byte_size: json_u64(object_field(object, "byteSize", "byte_size")).clamp(1, 100 * 1024 * 1024) as usize,
       })
     }
     "file" => {
@@ -1568,6 +1624,14 @@ fn normalize_clipboard_item(value: serde_json::Value) -> Option<ClipboardItem> {
     }
     _ => None,
   }
+}
+
+fn object_field<'a>(
+  object: &'a serde_json::Map<String, serde_json::Value>,
+  camel_case: &str,
+  snake_case: &str,
+) -> Option<&'a serde_json::Value> {
+  object.get(camel_case).or_else(|| object.get(snake_case))
 }
 
 fn json_u64(value: Option<&serde_json::Value>) -> u64 {
@@ -1893,5 +1957,55 @@ fn err<T: Serialize>(message: impl Into<String>) -> CommandResult<T> {
     ok: false,
     data: None,
     error: Some(message.into()),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn clipboard_items_serialize_with_renderer_field_names() {
+    let item = ClipboardItem::Text {
+      id: "item-1".to_string(),
+      pinned: false,
+      copy_count: 2,
+      created_at: 100,
+      updated_at: 200,
+      text: "hello".to_string(),
+    };
+
+    let serialized = serde_json::to_value(item).expect("clipboard item should serialize");
+    assert_eq!(serialized["copyCount"], 2);
+    assert_eq!(serialized["createdAt"], 100);
+    assert_eq!(serialized["updatedAt"], 200);
+    assert!(serialized.get("copy_count").is_none());
+  }
+
+  #[test]
+  fn persisted_snake_case_items_are_migrated_without_losing_metadata() {
+    let item = normalize_clipboard_item(serde_json::json!({
+      "kind": "text",
+      "id": "legacy-item",
+      "pinned": true,
+      "copy_count": 3,
+      "created_at": 1_000,
+      "updated_at": 2_000,
+      "text": "legacy"
+    }))
+    .expect("legacy item should normalize");
+
+    let serialized = serde_json::to_value(item).expect("normalized item should serialize");
+    assert_eq!(serialized["copyCount"], 3);
+    assert_eq!(serialized["createdAt"], 1_000);
+    assert_eq!(serialized["updatedAt"], 2_000);
+  }
+
+  #[cfg(windows)]
+  #[test]
+  fn paste_target_capture_stays_on_the_shortcut_fast_path() {
+    let started_at = std::time::Instant::now();
+    let _ = capture_paste_target();
+    assert!(started_at.elapsed() < Duration::from_millis(250));
   }
 }
