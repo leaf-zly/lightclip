@@ -19,6 +19,7 @@ use tauri::{
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
   AppHandle, Emitter, Manager, State, WindowEvent,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
 
 const STORE_VERSION: u32 = 1;
@@ -253,7 +254,18 @@ struct ClipboardStore {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
-    .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    .plugin(
+      tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(|app, _shortcut, event| {
+          if event.state == ShortcutState::Pressed {
+            let runtime = app.state::<AppRuntime>();
+            if let Err(error) = toggle_panel_impl(app, &runtime) {
+              log::error!("Failed to toggle LightClip from the global shortcut: {error}");
+            }
+          }
+        })
+        .build(),
+    )
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_log::Builder::default().build())
     .setup(|app| {
@@ -270,6 +282,14 @@ pub fn run() {
         last_clipboard_signature: Arc::new(Mutex::new(initial_clipboard_signature)),
       };
       app.manage(runtime.clone());
+      let global_shortcut = runtime
+        .store
+        .lock()
+        .map(|store| store.state.settings.global_shortcut.clone())
+        .unwrap_or_else(|_| default_settings().global_shortcut);
+      if let Err(error) = replace_global_shortcut(app.handle(), &global_shortcut) {
+        log::error!("Failed to register global shortcut {global_shortcut}: {error}");
+      }
       start_clipboard_watcher(app.handle().clone(), runtime.clone());
       create_tray(app.handle())?;
 
@@ -305,7 +325,6 @@ pub fn run() {
       close_window,
       hide_panel,
       show_panel_command,
-      toggle_panel,
       quit_app
     ])
     .run(tauri::generate_context!())
@@ -527,12 +546,26 @@ fn open_storage_directory(runtime: State<'_, AppRuntime>) -> CommandResult<()> {
 
 #[tauri::command]
 fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<AppSettings> {
-  let result = {
+  let (result, previous_shortcut) = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
-    store.update_settings(settings)
+    let previous_shortcut = store.state.settings.global_shortcut.clone();
+    (store.update_settings(settings), previous_shortcut)
   };
   match result {
     Ok(settings) => {
+      if settings.global_shortcut != previous_shortcut {
+        if let Err(error) = replace_global_shortcut(&app, &settings.global_shortcut) {
+          // Registration can fail when another application owns the shortcut.
+          // Restore both the OS registration and persisted setting atomically.
+          let _ = replace_global_shortcut(&app, &previous_shortcut);
+          if let Ok(mut store) = runtime.store.lock() {
+            store.state.settings.global_shortcut = previous_shortcut;
+            let _ = store.save();
+          }
+          broadcast_state(&app, &runtime);
+          return err(format!("快捷键注册失败: {error}"));
+        }
+      }
       apply_launch_at_login(settings.launch_at_login);
       broadcast_state(&app, &runtime);
       ok(settings)
@@ -574,16 +607,22 @@ fn show_panel_command(app: AppHandle, runtime: State<'_, AppRuntime>) -> Result<
   show_panel(&app, &runtime).map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-fn toggle_panel(app: AppHandle, runtime: State<'_, AppRuntime>) -> Result<(), String> {
+fn toggle_panel_impl(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()> {
   let Some(window) = app.get_webview_window("main") else {
     return Ok(());
   };
   if window.is_visible().unwrap_or(false) {
-    window.hide().map_err(|error| error.to_string())?;
+    window.hide()?;
     return Ok(());
   }
-  show_panel(&app, &runtime).map_err(|error| error.to_string())
+  show_panel(app, runtime)
+}
+
+fn replace_global_shortcut(app: &AppHandle, shortcut: &str) -> anyhow::Result<()> {
+  let manager = app.global_shortcut();
+  manager.unregister_all()?;
+  manager.register(shortcut.trim())?;
+  Ok(())
 }
 
 #[tauri::command]

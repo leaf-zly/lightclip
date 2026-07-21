@@ -40,7 +40,11 @@ const criticalSources = [
   },
   {
     path: '.github/workflows/tauri-2-build.yml',
-    requiredTokens: ['pnpm install --frozen-lockfile', 'pnpm tauri:build', 'Publish GitHub Release'],
+    requiredTokens: ['pnpm install --frozen-lockfile', 'pnpm tauri:build', 'Smoke Test Packaged Shortcut', 'Publish GitHub Release'],
+  },
+  {
+    path: 'scripts/test-packaged-shortcut.ps1',
+    requiredTokens: ['FindMainWindow', 'SendAltV', 'Alt+V did not show', 'ElapsedMilliseconds'],
   },
 ]
 

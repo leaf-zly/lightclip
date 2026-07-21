@@ -58,24 +58,9 @@ jobs:
       - name: Package Tauri App
         run: pnpm tauri:build
 
-      - name: Smoke Test Packaged App
+      - name: Smoke Test Packaged Shortcut
         shell: pwsh
-        run: |
-          $executable = Resolve-Path 'src-tauri/target/release/lightclip.exe'
-          $process = Start-Process -FilePath $executable -ArgumentList '--hidden' -PassThru -WindowStyle Hidden
-          try {
-            Start-Sleep -Seconds 5
-            $process.Refresh()
-            if ($process.HasExited) {
-              throw "LightClip exited during the packaged startup smoke test with code $($process.ExitCode)."
-            }
-          }
-          finally {
-            $process.Refresh()
-            if (-not $process.HasExited) {
-              Stop-Process -Id $process.Id -Force
-            }
-          }
+        run: ./scripts/test-packaged-shortcut.ps1 -ExecutablePath 'src-tauri/target/release/lightclip.exe'
 
       - name: Upload Dependency Lock
         uses: actions/upload-artifact@v7
