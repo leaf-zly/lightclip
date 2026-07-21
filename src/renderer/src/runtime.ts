@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { ShortcutEvent } from '@tauri-apps/plugin-global-shortcut'
 import type {
   AppSettings,
   AppState,
@@ -120,37 +119,4 @@ async function selectTauriStorageDirectory(): Promise<CommandResult<StorageLocat
   }
 
   return invoke<CommandResult<StorageLocationResult>>('move_storage_directory', { directory })
-}
-
-let activeRuntimeShortcut = ''
-
-/**
- * Registers the Tauri global shortcut from renderer state.
- *
- * Electron keeps global-shortcut ownership in the main process, so this is a
- * no-op there. Tauri's plugin API is loaded dynamically to avoid touching
- * native plugin code while the renderer is hosted by Electron.
- */
-export async function configureRuntimeGlobalShortcut(shortcut: string): Promise<void> {
-  if (!isTauriRuntime()) {
-    return
-  }
-
-  const normalizedShortcut = shortcut.trim()
-  if (!normalizedShortcut || normalizedShortcut === activeRuntimeShortcut) {
-    return
-  }
-
-  const { register, unregisterAll } = await import('@tauri-apps/plugin-global-shortcut')
-  await unregisterAll()
-  await register(normalizedShortcut, handleRuntimeShortcut)
-  activeRuntimeShortcut = normalizedShortcut
-}
-
-function handleRuntimeShortcut(event: ShortcutEvent): void {
-  if (event.state !== 'Pressed') {
-    return
-  }
-
-  void invoke('toggle_panel')
 }

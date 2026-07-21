@@ -6,6 +6,19 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.0.2] - 2026-07-21
+
+### Fixed
+
+- Moved global shortcut registration from the hidden Vue WebView to the Tauri Rust host so `Alt+V` remains active independently of renderer lifecycle and permissions.
+- Re-registers changed shortcuts in the Rust host and rolls back the persisted setting when Windows rejects a shortcut.
+- Removed renderer-side global-shortcut permissions and dependencies to keep one authoritative shortcut owner.
+
+### Verified
+
+- Added a packaged end-to-end shortcut test that launches LightClip hidden, sends native `Alt+V`, and requires the real main window to become visible within three seconds.
+- Retained Rust metadata migration, serialization, and native target-capture regression tests.
+
 ## [2.0.1] - 2026-07-21
 
 ### Fixed
@@ -298,6 +311,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.0.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.2
 [2.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.1
 [2.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.0
 [1.2.5]: https://github.com/leaf-zly/lightclip/releases/tag/v1.2.5

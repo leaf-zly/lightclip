@@ -8,8 +8,6 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "dialog:allow-save",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister-all"
+    "dialog:allow-save"
   ]
 }

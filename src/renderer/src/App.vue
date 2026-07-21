@@ -33,7 +33,7 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
 import type { AppSettings, AppState, AppThemeAccent, AppThemeMode, ClipboardItem, ClipboardItemKind } from '../../shared/types'
-import { configureRuntimeGlobalShortcut, getLightClipApi } from './runtime'
+import { getLightClipApi } from './runtime'
 import { createItemTitle, describeItem, formatBytes, formatRelativeTime, matchesQuery } from './utils'
 
 /**
@@ -209,9 +209,6 @@ onMounted(async () => {
   clockTimer = window.setInterval(() => {
     now.value = Date.now()
   }, 30_000)
-  void configureRuntimeGlobalShortcut(state.value.settings.globalShortcut).catch((error) => {
-    showToast(error instanceof Error ? error.message : '快捷键注册失败')
-  })
   focusSearch()
 })
 
@@ -229,15 +226,6 @@ watch([filteredItems, query, activeFilter], () => {
   visibleLimit.value = INITIAL_RENDER_LIMIT
   selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, filteredItems.value.length - 1))
 })
-
-watch(
-  () => state.value.settings.globalShortcut,
-  (shortcut) => {
-    void configureRuntimeGlobalShortcut(shortcut).catch((error) => {
-      showToast(error instanceof Error ? error.message : '快捷键注册失败')
-    })
-  },
-)
 
 async function focusSearch(): Promise<void> {
   await nextTick()
