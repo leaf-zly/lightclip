@@ -1,9 +1,9 @@
 {
   "name": "lightclip-electron",
-  "version": "1.2.5",
+  "version": "2.0.0",
   "private": true,
   "packageManager": "pnpm@11.7.0",
-  "description": "A lightweight and polished Windows clipboard history app.",
+  "description": "A lightweight Windows clipboard history app built with Tauri.",
   "author": "qiang.tan",
   "homepage": "https://github.com/leaf-zly/lightclip#readme",
   "repository": {
@@ -13,14 +13,20 @@
   "main": "dist/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\"",
+    "dev": "pnpm tauri:dev",
     "dev:renderer": "vite --host 127.0.0.1 --port 4287",
     "dev:main": "wait-on tcp:4287 && tsc -p tsconfig.main.json && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:4287 electron .",
+    "electron:dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\"",
     "check:sources": "node scripts/check-source-integrity.mjs",
-    "build": "pnpm typecheck && vite build && tsc -p tsconfig.main.json",
-    "dist": "pnpm build && electron-builder --win nsis portable",
+    "build": "pnpm typecheck && pnpm build:renderer",
+    "dist": "pnpm tauri:build",
+    "electron:build": "pnpm typecheck && vite build && tsc -p tsconfig.main.json",
+    "electron:dist": "pnpm electron:build && electron-builder --win nsis portable",
     "typecheck": "pnpm check:sources && vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json",
-    "preview": "pnpm build && electron ."
+    "electron:preview": "pnpm electron:build && electron .",
+    "build:renderer": "vite build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "build": {
     "appId": "dev.lightclip.app",
@@ -60,9 +66,13 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.0.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "~2.7.1",
+    "@tauri-apps/plugin-global-shortcut": "~2.3.2",
     "vue": "^3.5.25"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "concurrently": "^9.2.1",

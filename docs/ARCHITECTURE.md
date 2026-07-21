@@ -1,102 +1,53 @@
 # Architecture
 
-LightClip is a small Electron desktop app with a local-first data model and a narrow IPC boundary.
+LightClip 2 is a Tauri 2 desktop application with a Vue 3 renderer and a Rust host. It uses the Windows WebView2 runtime instead of shipping an embedded browser engine.
 
-## Goals
+## Runtime Boundaries
 
-- Keep clipboard history searchable and fast.
-- Keep data local by default.
-- Keep the renderer unprivileged and communicate through typed IPC.
-- Keep packaging reliable for Windows installer and portable builds.
-
-## Process Layout
-
-| Area | Path | Responsibility |
+| Layer | Location | Responsibility |
 | --- | --- | --- |
-| Main process | `src/main` | App lifecycle, tray, global shortcut, clipboard polling, persistence, startup registration, native file clipboard fallback. |
-| Preload | `src/preload` | Context bridge exposing the minimal `window.lightClip` API. |
-| Renderer | `src/renderer` | Vue 3 UI, search, settings, history interaction, theme accent presentation. |
-| Shared types | `src/shared` | IPC channel names, state, settings, command result, and clipboard item contracts. |
-| Resources | `resources` | App icons used by Electron, tray, installer, and renderer. |
+| Renderer | `src/renderer` | Search, filters, previews, settings, themes, keyboard interaction, and user feedback. |
+| Shared contract | `src/shared` | Typed application state, clipboard item, settings, and command result shapes. |
+| Tauri host | `src-tauri/src` | Clipboard access, history persistence, tray, startup registration, window lifecycle, focus restoration, and allowlisted external actions. |
+| Bundle configuration | `src-tauri/tauri.conf.json` | Window policy, icons, NSIS target, and WebView2 bootstrap behavior. |
+| Release automation | `.github/workflows/tauri-2-build.yml` | Reproducible Windows compilation, artifact upload, and tagged GitHub Release publication. |
 
-## State Model
+The legacy Electron implementation remains under `src/main` and `src/preload` for 1.x maintenance. Tauri 2 packages do not include that runtime.
 
-The main process owns persisted state through `ClipboardStore`.
+## Command Boundary
 
-Primary state:
+The renderer obtains a `LightClipApi` from `src/renderer/src/runtime.ts`. Under Tauri it maps the shared API onto typed `invoke` commands and event listeners. Under Electron 1.x it uses the preload bridge.
 
-- `settings`: user preferences and capture limits.
-- `items`: clipboard history records sorted for display.
-- `storageBytes`: current compressed on-disk store size for lightweight storage visibility.
-- `storageDirectory` / `storageFilePath`: active data location shown in Settings.
+The renderer cannot access the filesystem, shell, clipboard, registry, or arbitrary URLs directly. Rust commands validate input and return a `CommandResult` for recoverable failures. External URLs are restricted to the project GitHub prefix.
 
-Clipboard item kinds:
+## Clipboard Flow
 
-- `text`: normalized text.
-- `image`: PNG data URL with dimensions and byte size.
-- `file`: absolute file path list.
+1. A background watcher samples the clipboard every 650 ms.
+2. Enabled formats are normalized into text, image, or file snapshots.
+3. A deterministic signature prevents recapturing unchanged data and items written by LightClip itself.
+4. Foreground process exclusions and capture limits are evaluated before persistence.
+5. The store deduplicates records, applies retention and item limits, compresses the snapshot, and broadcasts updated state.
+6. The renderer sorts, searches, filters, and stages visible history records.
+
+Image and file inspection is skipped while the corresponding opt-in setting is disabled. This avoids unnecessary conversion and PowerShell work in the default text-only path.
 
 ## Persistence
 
-Data is written to `lightclip-store.json.br` in Electron `userData` by default. The store uses compact JSON plus Brotli compression at maximum quality to reduce disk usage, especially when image history is enabled.
+The default data root is `%APPDATA%\LightClip`. The primary file is compact JSON compressed with Brotli quality 11. Before replacement, the current primary file is copied to `.bak`; writes use a same-directory temporary file and a final rename. Unreadable primary data falls back to the backup and unrecoverable files are quarantined with a timestamped `.corrupt-*` suffix.
 
-Older `lightclip-store.json` files are still readable and are migrated to the compressed store on load. A custom storage directory is persisted separately in `lightclip-storage.json` under Electron `userData`, allowing the data file to move without losing the pointer to it.
+Store parsing normalizes settings, timestamps, IDs, item bounds, and file paths. Legacy text records without a `kind` field remain importable. Custom storage selection is persisted separately so the active store can be located on the next launch.
 
-When `encryptStore` is enabled and Electron safeStorage is available, the Brotli payload is encrypted with OS account-backed storage before being written. The file path remains stable so old plain Brotli stores can be read and rewritten in encrypted form during normal saves.
+Tauri 2.0 reports local account encryption as unavailable. Electron 1.x encrypted stores must be exported from 1.x and imported into 2.0 as JSON.
 
-Before replacing the primary compressed store, LightClip copies the last readable store to `lightclip-store.json.br.bak`. On startup, the backup is used when the primary file is missing or unreadable. When both primary and backup stores are unreadable, they are quarantined with `.corrupt-*` suffixes and a clean store is recreated.
+## Windows Integration
 
-The store normalizes settings and history records on load, update, and import so old stores receive new defaults safely. This is required for settings such as `themeAccent`, `themeMode`, `capturePausedUntil`, and `retentionDays` that were added after the initial release.
-
-## Clipboard Capture
-
-The main process polls the clipboard at a short interval and creates a stable signature from enabled payloads:
-
-- Text is always read.
-- File paths are read only when file history is enabled.
-- Images are read only when image history is enabled.
-- Foreground app exclusions are checked before a changed clipboard payload is recorded.
-
-Capture order prefers richer enabled payloads:
-
-1. Files when file history is enabled and file paths exist.
-2. Image when image history is enabled and an image exists.
-3. Text otherwise.
-
-## IPC Boundary
-
-The renderer never imports Electron directly. It calls the preload bridge:
-
-- read state
-- copy/delete/toggle pin/clear history
-- update settings
-- check GitHub Releases for updates on demand
-- control window visibility
-- quit the app
-- subscribe to state changes
-
-New privileged behavior should be added to `src/shared/types.ts`, implemented in `src/main/index.ts`, and exposed deliberately in `src/preload/index.ts`.
-
-## UI Theming
-
-Theme accents are persisted as `AppThemeAccent` values. Appearance mode is persisted as `AppThemeMode` with `system`, `light`, and `dark` options. The renderer maps these settings to `theme-*` and `mode-*` classes on the shell, and CSS variables drive:
-
-- title bar chrome
-- focus rings
-- selected history item states
-- switches
-- toast and empty states
-- image preview surfaces
-
-Large history lists are rendered in stages. The renderer starts with a bounded subset, extends the rendered window during scroll or keyboard navigation, and keeps filtering/search state based on the full in-memory list owned by the main process.
+- Startup uses the current-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry with `--hidden`.
+- The frameless window hides on close and remains available through the tray and global shortcut.
+- File-drop clipboard APIs and focus restoration use hidden, non-interactive Windows PowerShell processes.
+- Paste-after-select captures the previous foreground window and focused control, hides LightClip, restores focus without resizing a normal window, and sends `Ctrl + V` asynchronously.
 
 ## Packaging
 
-Vite builds the renderer to `dist/renderer` with `base: './'` so packaged `file://` loading works. TypeScript builds the main and preload code into `dist/main` and `dist/preload`.
+The NSIS installer uses WebView2's download bootstrapper, keeping WebView2 out of the installer payload. Official binaries are generated on GitHub-hosted Windows runners and attached to workflow runs; `v2.*` tags also publish GitHub Release assets.
 
-`electron-builder` creates:
-
-- NSIS installer
-- portable executable
-
-The project uses the local Electron runtime from `node_modules/electron/dist` to reduce external download failures during packaging.
+The renderer build remains independently verifiable with `pnpm typecheck` and `pnpm build`. Rust and NSIS verification is performed by the GitHub workflow to avoid generating unsigned native executables on maintainer machines where heuristic antivirus products may interfere.

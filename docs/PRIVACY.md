@@ -22,7 +22,7 @@ Depending on settings, LightClip may store:
 
 ## Where Data Is Stored
 
-Data is stored in Electron `userData` for the current Windows user by default. The active storage directory can be changed in Settings.
+Data is stored under `%APPDATA%\LightClip` for the current Windows user by default. The active storage directory can be changed in Settings.
 
 Primary file:
 
@@ -30,11 +30,11 @@ Primary file:
 lightclip-store.json.br
 ```
 
-You can open the data directory from the tray menu or Settings. Older uncompressed stores are migrated automatically.
+You can open the data directory from Settings. Older readable plain Brotli and uncompressed stores are migrated automatically.
 
 LightClip may also keep `lightclip-store.json.br.bak` and `.corrupt-*` recovery files in the active storage directory. These files can contain the same clipboard data as the primary store and should be treated as private.
 
-When local encryption is enabled and available, the compressed store is encrypted with Electron safeStorage, which is backed by the current Windows account. This reduces casual local exposure but does not make exported JSON backups encrypted.
+Tauri 2.0 does not provide the Electron 1.x account-encryption option. Users with an encrypted 1.x store must export JSON from 1.x before upgrading and import that backup into 2.0. Exported JSON is unencrypted.
 
 ## What Is Not Stored
 
@@ -85,4 +85,4 @@ History export writes clipboard records and settings to a user-selected JSON fil
 
 ### Startup
 
-Startup registration is per current user and uses Electron's login item settings. It does not require administrator permissions.
+Startup registration is per current user and writes the installed executable to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. It does not require administrator permissions.

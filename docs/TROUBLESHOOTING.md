@@ -12,10 +12,9 @@ Try:
 
 ```powershell
 pnpm build
-pnpm preview
 ```
 
-Packaged builds rely on relative renderer assets. If the issue appears only in installer or portable builds, include the exact asset name in the bug report.
+Packaged builds rely on relative renderer assets and the Windows WebView2 runtime. Repair or install WebView2 if the GitHub release remains blank, and include the exact release asset name in the bug report.
 
 ## Build Reports Garbled TypeScript
 
@@ -30,17 +29,16 @@ git restore src/shared/types.ts src/renderer/src/utils.ts
 pnpm build
 ```
 
-`pnpm build` and `pnpm dist` run the same source integrity check before TypeScript compilation, so corrupted source files should fail with a focused diagnostic before compiler parser errors appear.
+`pnpm build` runs the source integrity check before TypeScript compilation. Official `pnpm dist` packaging runs in GitHub Actions after the same quality gate.
 
-## Dist Cannot Replace Win-Unpacked Files
+## GitHub Packaging Fails
 
-If `pnpm dist` fails with `EBUSY` while removing files under `release\win-unpacked`, an older packaged LightClip process is still running from that directory.
+Open the failed `Tauri 2 Build` run and inspect the first failing step. Dependency installation, source checks, Rust compilation, and NSIS packaging are separate steps so failures remain attributable.
 
-Close LightClip from the tray, or run:
+Do not upload a locally built binary as an official replacement. Fix the source or workflow and rerun:
 
 ```powershell
-Get-Process LightClip,electron -ErrorAction SilentlyContinue | Stop-Process -Force
-pnpm dist
+gh workflow run tauri-2-build.yml --ref codex/tauri-2.0
 ```
 
 ## Shortcut Does Not Open LightClip
@@ -48,16 +46,14 @@ pnpm dist
 Check:
 
 - Another app may already own the shortcut.
-- The configured shortcut may be invalid for Electron global shortcuts.
+- The configured shortcut may be invalid or already reserved by Windows.
 - Restart LightClip after changing the shortcut.
 
 Include the configured shortcut in bug reports.
 
-## Encrypted Storage Cannot Be Opened
+## Encrypted 1.x Storage Cannot Be Opened
 
-Encrypted storage is tied to the Windows account that created it. If a store is moved to another account or Windows profile, disable encryption before moving it or export/import history with a private JSON backup.
-
-If the encrypted primary store is unreadable, LightClip tries `lightclip-store.json.br.bak` and quarantines unreadable files with a `.corrupt-*` suffix.
+Tauri 2.0 cannot directly decrypt Electron 1.x account-encrypted stores. Start LightClip 1.x under the Windows account that created the store, export history to JSON, then import that file into LightClip 2. Keep the JSON backup private because it is not encrypted.
 
 ## Startup Does Not Work
 
@@ -80,7 +76,7 @@ reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v electron.app.Electron /f
 ```
 
-Current LightClip builds clean up this legacy entry on startup and only register startup from packaged builds.
+Delete the legacy entry, start LightClip 2, and enable startup again in Settings. LightClip 2 registers only its packaged executable with `--hidden`.
 
 ## File History Does Not Paste Files In Explorer
 
@@ -92,7 +88,7 @@ If this fails:
 - Confirm PowerShell is available and not blocked by policy.
 - Confirm copied file paths still exist.
 
-When native file-drop restoration fails, LightClip falls back to writing file paths as text and HTML.
+When native file-drop restoration fails, LightClip falls back to writing file paths as text.
 
 ## Image History Uses Too Much Space
 
@@ -105,7 +101,7 @@ To reset local data:
 1. Quit LightClip from the tray.
 2. Open the active storage directory from Settings or the tray menu.
 3. Delete `lightclip-store.json.br`, `lightclip-store.json.br.bak`, and any `lightclip-store.json.br.corrupt-*` files.
-4. To also forget a custom storage directory, delete `lightclip-storage.json` from Electron `userData`.
+4. To also forget a custom storage directory, delete `%APPDATA%\LightClip\lightclip-storage.json`.
 5. Start LightClip again.
 
 Do not share these files publicly because they may contain clipboard history or local paths.

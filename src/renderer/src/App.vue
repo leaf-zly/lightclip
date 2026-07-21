@@ -33,6 +33,7 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
 import type { AppSettings, AppState, AppThemeAccent, AppThemeMode, ClipboardItem, ClipboardItemKind } from '../../shared/types'
+import { configureRuntimeGlobalShortcut, getLightClipApi } from './runtime'
 import { createItemTitle, describeItem, formatBytes, formatRelativeTime, matchesQuery } from './utils'
 
 /**
@@ -67,6 +68,7 @@ interface HistoryFilterOption {
   label: string
 }
 
+const lightClip = getLightClipApi()
 const DEFAULT_SHORTCUT = 'Alt+V'
 const DEFAULT_PAUSE_MINUTES = 15
 const INITIAL_RENDER_LIMIT = 120
@@ -200,13 +202,16 @@ const shellClasses = computed(() => [
  * Loads initial app state and wires main-process updates into Vue state.
  */
 onMounted(async () => {
-  state.value = await window.lightClip.getState()
-  unsubscribeState = window.lightClip.onStateChanged((nextState) => {
+  state.value = await lightClip.getState()
+  unsubscribeState = lightClip.onStateChanged((nextState) => {
     state.value = nextState
   })
   clockTimer = window.setInterval(() => {
     now.value = Date.now()
   }, 30_000)
+  void configureRuntimeGlobalShortcut(state.value.settings.globalShortcut).catch((error) => {
+    showToast(error instanceof Error ? error.message : '快捷键注册失败')
+  })
   focusSearch()
 })
 
@@ -225,6 +230,15 @@ watch([filteredItems, query, activeFilter], () => {
   selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, filteredItems.value.length - 1))
 })
 
+watch(
+  () => state.value.settings.globalShortcut,
+  (shortcut) => {
+    void configureRuntimeGlobalShortcut(shortcut).catch((error) => {
+      showToast(error instanceof Error ? error.message : '快捷键注册失败')
+    })
+  },
+)
+
 async function focusSearch(): Promise<void> {
   await nextTick()
   searchInput.value?.focus()
@@ -238,15 +252,15 @@ async function copySelectedItem(): Promise<void> {
 }
 
 async function copyItem(item: ClipboardItem): Promise<void> {
-  void window.lightClip.hidePanel()
-  const result = await window.lightClip.copyItem(item.id)
+  void lightClip.hidePanel()
+  const result = await lightClip.copyItem(item.id)
   if (!result.ok) {
     showToast(result.error ?? '复制失败')
   }
 }
 
 async function deleteItem(item: ClipboardItem): Promise<void> {
-  const result = await window.lightClip.deleteItem(item.id)
+  const result = await lightClip.deleteItem(item.id)
   if (previewItem.value?.id === item.id) {
     previewItem.value = null
   }
@@ -254,7 +268,7 @@ async function deleteItem(item: ClipboardItem): Promise<void> {
 }
 
 async function togglePin(item: ClipboardItem): Promise<void> {
-  const result = await window.lightClip.togglePin(item.id)
+  const result = await lightClip.togglePin(item.id)
   showToast(result.ok ? (result.data?.pinned ? '已固定' : '已取消固定') : result.error ?? '操作失败')
 }
 
@@ -264,7 +278,7 @@ async function clearHistory(): Promise<void> {
     return
   }
 
-  const result = await window.lightClip.clearHistory()
+  const result = await lightClip.clearHistory()
   showToast(result.ok ? '已清空未固定记录' : result.error ?? '清空失败')
 }
 
@@ -279,12 +293,12 @@ async function clearActiveType(): Promise<void> {
     return
   }
 
-  const result = await window.lightClip.clearByKind(kind)
+  const result = await lightClip.clearByKind(kind)
   showToast(result.ok ? `已清理${getKindLabel(kind)}历史` : result.error ?? '清理失败')
 }
 
 async function exportHistory(): Promise<void> {
-  const result = await window.lightClip.exportHistory()
+  const result = await lightClip.exportHistory()
   if (!result.ok) {
     showToast(result.error ?? '导出失败')
     return
@@ -296,7 +310,7 @@ async function exportHistory(): Promise<void> {
 }
 
 async function importHistory(): Promise<void> {
-  const result = await window.lightClip.importHistory()
+  const result = await lightClip.importHistory()
   if (!result.ok) {
     showToast(result.error ?? '导入失败')
     return
@@ -308,7 +322,7 @@ async function importHistory(): Promise<void> {
 }
 
 async function checkForUpdates(): Promise<void> {
-  const result = await window.lightClip.checkForUpdates()
+  const result = await lightClip.checkForUpdates()
   if (!result.ok || !result.data) {
     showToast(result.error ?? '检查更新失败')
     return
@@ -321,17 +335,17 @@ async function checkForUpdates(): Promise<void> {
 
   const confirmed = window.confirm(`发现新版本 ${result.data.latestVersion}，是否打开下载页？`)
   if (confirmed) {
-    await window.lightClip.openExternalUrl(result.data.releaseUrl)
+    await lightClip.openExternalUrl(result.data.releaseUrl)
   }
 }
 
 async function openStorageDirectory(): Promise<void> {
-  const result = await window.lightClip.openStorageDirectory()
+  const result = await lightClip.openStorageDirectory()
   showToast(result.ok ? '已打开存储目录' : result.error ?? '打开失败')
 }
 
 async function selectStorageDirectory(): Promise<void> {
-  const result = await window.lightClip.selectStorageDirectory()
+  const result = await lightClip.selectStorageDirectory()
   if (!result.ok) {
     showToast(result.error ?? '切换失败')
     return
@@ -343,7 +357,7 @@ async function selectStorageDirectory(): Promise<void> {
 }
 
 async function resetStorageDirectory(): Promise<void> {
-  const result = await window.lightClip.resetStorageDirectory()
+  const result = await lightClip.resetStorageDirectory()
   showToast(result.ok ? '已恢复默认存储位置' : result.error ?? '恢复失败')
 }
 
@@ -378,19 +392,19 @@ async function toggleThemeMode(): Promise<void> {
 }
 
 async function quitApp(): Promise<void> {
-  await window.lightClip.quit()
+  await lightClip.quit()
 }
 
 async function minimizeWindow(): Promise<void> {
-  await window.lightClip.minimizeWindow()
+  await lightClip.minimizeWindow()
 }
 
 async function toggleMaximizeWindow(): Promise<void> {
-  await window.lightClip.toggleMaximizeWindow()
+  await lightClip.toggleMaximizeWindow()
 }
 
 async function closeWindow(): Promise<void> {
-  await window.lightClip.closeWindow()
+  await lightClip.closeWindow()
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
@@ -406,10 +420,10 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
     }
   }
 
-  const result = await window.lightClip.updateSettings(settings)
+  const result = await lightClip.updateSettings(settings)
   if (!result.ok) {
     showToast(result.error ?? '设置保存失败')
-    state.value = await window.lightClip.getState()
+    state.value = await lightClip.getState()
   }
 }
 
@@ -504,7 +518,7 @@ function handleKeyboard(event: KeyboardEvent): void {
     } else if (showSettings.value) {
       showSettings.value = false
     } else {
-      window.lightClip.hidePanel()
+      lightClip.hidePanel()
     }
     return
   }
