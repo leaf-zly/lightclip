@@ -1,39 +1,24 @@
-# LightClip v2.0.0
+# LightClip v2.0.1
 
-LightClip 2 replaces the bundled Electron runtime with Tauri 2 and Windows WebView2. The result is a substantially smaller Windows package while preserving the local clipboard workflow, tray behavior, appearance controls, and optional image/file history.
+This patch fixes clipboard metadata display and removes the multi-second delay when opening LightClip from its global shortcut.
 
-## Highlights
+## Fixed
 
-- Smaller Tauri 2 application and NSIS installer using the system WebView2 runtime.
-- Text, PNG image, and native Windows file-drop clipboard history; image and file capture remain off by default.
-- Search, filters, pinning, previews, retention limits, import/export, and configurable compressed storage.
-- System/light/dark appearance and five full-interface accent themes.
-- Tray controls, `Alt + V`, current-user startup registration, privacy exclusions, and optional paste-after-select.
-- Official binaries built and published by GitHub Actions from this tagged source revision.
+- History timestamps and copy counts now use the renderer's camelCase contract, eliminating `NaN/NaN NaN:NaN` labels.
+- Existing metadata written by 2.0.0 is migrated from snake_case automatically.
+- Image history receives the correct `dataUrl` and `byteSize` fields.
+- Shortcut target capture now calls Windows User32 directly instead of starting PowerShell before showing the panel.
+- Invalid timestamps fall back to `时间未知` rather than exposing a broken date.
 
-## Upgrade Notes
+## Verification
 
-LightClip 2 stores data under `%APPDATA%\LightClip` by default. Readable plain Brotli and legacy JSON stores are migrated automatically.
-
-Electron 1.x encrypted stores cannot be decrypted directly by Tauri 2.0. Before upgrading, export history to JSON from LightClip 1.x, then import the JSON file from LightClip 2 settings. Export files are unencrypted and should be protected accordingly.
+- Rust tests verify renderer-facing field names and 2.0.0 data migration.
+- The native target-window capture path is checked to complete within 250 ms on GitHub's Windows runner.
+- Source integrity, Vue/TypeScript checks, renderer production build, Tauri packaging, and packaged startup/store initialization run on GitHub Actions.
 
 ## Downloads
 
 - `LightClip_*_setup.exe`: recommended current-user installer.
 - `lightclip.exe`: standalone application binary.
 
-The installer downloads Microsoft's WebView2 bootstrapper only when the runtime is missing.
-
-## Verification
-
-- Source integrity check passed.
-- Vue and TypeScript type checks passed with `pnpm typecheck`.
-- Renderer production build passed with `pnpm build`.
-- Rust compilation, NSIS packaging, and a packaged startup/store-initialization smoke test run on GitHub's `windows-latest` runner before publication.
-
-## Security Notes
-
-- Clipboard history remains local and no telemetry is included.
-- Manual update checks contact the LightClip GitHub Releases API.
-- Release binaries are not Authenticode signed yet. Windows SmartScreen or antivirus products may show an unknown-publisher warning or false positive despite the public build provenance.
-- Paste-after-select and native file restoration depend on Windows PowerShell and can be restricted by enterprise policy.
+Release binaries remain unsigned, so Windows SmartScreen or third-party antivirus products may still show an unknown-publisher warning.

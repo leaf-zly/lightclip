@@ -4,6 +4,10 @@ import type { ClipboardItem } from '../../shared/types'
  * Formats timestamps into short labels suitable for a compact clipboard list.
  */
 export function formatRelativeTime(timestamp: number, now = Date.now()): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return '时间未知'
+  }
+
   const diff = Math.max(0, now - timestamp)
   const minute = 60_000
   const hour = 60 * minute
