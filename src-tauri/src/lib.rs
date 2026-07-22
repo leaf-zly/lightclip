@@ -67,7 +67,30 @@ extern "system" {
   fn GetForegroundWindow() -> WindowHandle;
   fn GetWindowThreadProcessId(window: WindowHandle, process_id: *mut u32) -> u32;
   fn GetGUIThreadInfo(thread_id: u32, info: *mut GuiThreadInfo) -> i32;
+  fn IsWindow(window: WindowHandle) -> i32;
+  fn IsIconic(window: WindowHandle) -> i32;
+  fn ShowWindowAsync(window: WindowHandle, command: i32) -> i32;
+  fn SetForegroundWindow(window: WindowHandle) -> i32;
+  fn BringWindowToTop(window: WindowHandle) -> i32;
+  fn SetFocus(window: WindowHandle) -> WindowHandle;
+  fn AttachThreadInput(attach_thread: u32, attach_to_thread: u32, attach: i32) -> i32;
+  fn keybd_event(virtual_key: u8, scan_code: u8, flags: u32, extra_info: usize);
 }
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+  fn GetCurrentThreadId() -> u32;
+}
+
+#[cfg(windows)]
+const SW_RESTORE: i32 = 9;
+#[cfg(windows)]
+const VK_CONTROL: u8 = 0x11;
+#[cfg(windows)]
+const VK_V: u8 = 0x56;
+#[cfg(windows)]
+const KEYEVENTF_KEYUP: u32 = 0x0002;
 
 #[derive(Clone)]
 struct AppRuntime {
@@ -1492,70 +1515,90 @@ fn capture_paste_target() -> anyhow::Result<String> {
 }
 
 fn paste_to_target(target: &str) -> anyhow::Result<()> {
-  let encoded_target = base64::engine::general_purpose::STANDARD.encode(target.as_bytes());
-  let script = format!(
-    r#"
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
-$targetSpec = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_target}'))
-Add-Type -Namespace LightClip -Name NativeMethods -MemberDefinition @'
-  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-'@
-function Convert-Handle([string] $value) {{
-  [int64]$handleValue = 0
-  if (-not [Int64]::TryParse($value, [ref]$handleValue) -or $handleValue -le 0) {{ return [IntPtr]::Zero }}
-  return [IntPtr]$handleValue
-}}
-function Get-ThreadId([IntPtr] $handle) {{
-  [uint32]$processId = 0
-  [LightClip.NativeMethods]::GetWindowThreadProcessId($handle, [ref]$processId)
-}}
-$parts = $targetSpec -split ';', 2
-$windowHandle = Convert-Handle $parts[0]
-$focusedWindow = if ($parts.Length -gt 1) {{ Convert-Handle $parts[1] }} else {{ [IntPtr]::Zero }}
-if ($windowHandle -ne [IntPtr]::Zero -and [LightClip.NativeMethods]::IsWindow($windowHandle)) {{
-  $currentThreadId = [LightClip.NativeMethods]::GetCurrentThreadId()
-  $targetThreadId = Get-ThreadId $windowHandle
-  $foregroundThreadId = Get-ThreadId ([LightClip.NativeMethods]::GetForegroundWindow())
-  $attachedTarget = $false
-  $attachedForeground = $false
-  try {{
-    if ($targetThreadId -ne 0 -and $targetThreadId -ne $currentThreadId) {{
-      $attachedTarget = [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $targetThreadId, $true)
-    }}
-    if ($foregroundThreadId -ne 0 -and $foregroundThreadId -ne $currentThreadId -and $foregroundThreadId -ne $targetThreadId) {{
-      $attachedForeground = [LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $foregroundThreadId, $true)
-    }}
-    if ([LightClip.NativeMethods]::IsIconic($windowHandle)) {{
-      [void][LightClip.NativeMethods]::ShowWindowAsync($windowHandle, 9)
-      Start-Sleep -Milliseconds 40
-    }}
-    if (-not [LightClip.NativeMethods]::SetForegroundWindow($windowHandle)) {{
-      [void][LightClip.NativeMethods]::BringWindowToTop($windowHandle)
-      [void][LightClip.NativeMethods]::SetForegroundWindow($windowHandle)
-    }}
-    if ($focusedWindow -ne [IntPtr]::Zero -and [LightClip.NativeMethods]::IsWindow($focusedWindow)) {{
-      [void][LightClip.NativeMethods]::SetFocus($focusedWindow)
-    }}
-  }} finally {{
-    if ($attachedForeground) {{ [void][LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $foregroundThreadId, $false) }}
-    if ($attachedTarget) {{ [void][LightClip.NativeMethods]::AttachThreadInput($currentThreadId, $targetThreadId, $false) }}
-  }}
-}}
-Start-Sleep -Milliseconds 120
-[System.Windows.Forms.SendKeys]::SendWait('^v')
-"#
-  );
-  run_powershell(&script).map(|_| ())
+  #[cfg(windows)]
+  {
+    let (window_value, focused_value) = parse_paste_target(target)?;
+    let window = window_value as WindowHandle;
+    let focused_window = focused_value as WindowHandle;
+    if unsafe { IsWindow(window) } == 0 {
+      anyhow::bail!("粘贴目标窗口已失效");
+    }
+
+    // Let WebView2 finish hiding before changing the foreground window. This
+    // prevents its completed click event from reclaiming focus after paste.
+    thread::sleep(Duration::from_millis(24));
+
+    let current_thread = unsafe { GetCurrentThreadId() };
+    let target_thread = unsafe { GetWindowThreadProcessId(window, std::ptr::null_mut()) };
+    let foreground_window = unsafe { GetForegroundWindow() };
+    let foreground_thread = unsafe { GetWindowThreadProcessId(foreground_window, std::ptr::null_mut()) };
+    let attached_target = target_thread != 0
+      && target_thread != current_thread
+      && unsafe { AttachThreadInput(current_thread, target_thread, 1) } != 0;
+    let attached_foreground = foreground_thread != 0
+      && foreground_thread != current_thread
+      && foreground_thread != target_thread
+      && unsafe { AttachThreadInput(current_thread, foreground_thread, 1) } != 0;
+
+    let paste_result = (|| {
+      // Restoring only minimized windows avoids resizing normal or maximized targets.
+      if unsafe { IsIconic(window) } != 0 {
+        unsafe { ShowWindowAsync(window, SW_RESTORE) };
+        thread::sleep(Duration::from_millis(40));
+      }
+
+      for _ in 0..5 {
+        if unsafe { SetForegroundWindow(window) } == 0 {
+          unsafe {
+            BringWindowToTop(window);
+            SetForegroundWindow(window);
+          }
+        }
+        if !focused_window.is_null() && unsafe { IsWindow(focused_window) } != 0 {
+          unsafe { SetFocus(focused_window) };
+        }
+        thread::sleep(Duration::from_millis(16));
+        if unsafe { GetForegroundWindow() } == window {
+          unsafe { send_ctrl_v() };
+          return Ok(());
+        }
+      }
+
+      anyhow::bail!("Windows 未允许恢复粘贴目标窗口焦点")
+    })();
+
+    // Always split the input queues again, including activation failures.
+    if attached_foreground {
+      unsafe { AttachThreadInput(current_thread, foreground_thread, 0) };
+    }
+    if attached_target {
+      unsafe { AttachThreadInput(current_thread, target_thread, 0) };
+    }
+    return paste_result;
+  }
+
+  #[cfg(not(windows))]
+  anyhow::bail!("仅 Windows 支持自动粘贴")
+}
+
+fn parse_paste_target(target: &str) -> anyhow::Result<(isize, isize)> {
+  let mut parts = target.splitn(2, ';');
+  let window = parts.next().unwrap_or_default().parse::<isize>()?;
+  let focused_window = parts.next().unwrap_or("0").parse::<isize>()?;
+  if window <= 0 || focused_window < 0 {
+    anyhow::bail!("无效的粘贴目标窗口")
+  }
+  Ok((window, focused_window))
+}
+
+#[cfg(windows)]
+unsafe fn send_ctrl_v() {
+  unsafe {
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event(VK_V, 0, 0, 0);
+    keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+  }
 }
 
 fn run_powershell(script: &str) -> anyhow::Result<String> {
@@ -2050,6 +2093,14 @@ mod tests {
     assert_eq!(serialized["copyCount"], 3);
     assert_eq!(serialized["createdAt"], 1_000);
     assert_eq!(serialized["updatedAt"], 2_000);
+  }
+
+  #[test]
+  fn paste_target_parser_rejects_missing_or_invalid_top_level_handles() {
+    assert_eq!(parse_paste_target("123;456").expect("valid handles should parse"), (123, 456));
+    assert_eq!(parse_paste_target("123").expect("focused control is optional"), (123, 0));
+    assert!(parse_paste_target("0;456").is_err());
+    assert!(parse_paste_target("not-a-handle;456").is_err());
   }
 
   #[cfg(windows)]
