@@ -1,19 +1,19 @@
-# LightClip v2.0.2
+# LightClip v2.0.3
 
-This patch restores the `Alt+V` global shortcut and moves shortcut ownership into the Tauri Rust host.
+This patch makes paste-after-copy reliably return to the app and input control that was focused before LightClip opened.
 
 ## Fixed
 
-- `Alt+V` no longer depends on an asynchronous callback registered by the hidden Vue WebView.
-- The Rust host registers the configured shortcut during application startup and handles show/hide directly.
-- Shortcut changes are validated against Windows before they remain persisted; failed changes restore the previous working shortcut.
-- Renderer-side shortcut permissions and the unused JavaScript plugin dependency have been removed.
+- Removed the per-paste PowerShell process and its startup delay.
+- Restores the captured top-level window and focused child control through direct Win32 calls.
+- Waits for the LightClip panel to finish hiding and confirms the destination is foreground before sending `Ctrl+V`.
+- Does not restore normal or maximized destination windows, preventing unwanted size changes and reducing flicker.
 
 ## Verification
 
 - The packaged app is launched with `--hidden` on GitHub's Windows runner.
-- The workflow sends a native `Alt+V` key sequence and requires the actual `LightClip` main window to become visible within three seconds.
-- Rust serialization, 2.0.0 metadata migration, native target capture, source integrity, Vue/TypeScript, Tauri packaging, and dependency-lock checks remain enabled.
+- The workflow focuses a real WinForms textbox, sends native `Alt+V`, selects a known history item, and requires that textbox to receive the item without manual refocusing.
+- Rust host tests, source integrity, PowerShell 5/7 parsing, Vue/TypeScript, Tauri packaging, and dependency-lock checks remain enabled.
 
 ## Downloads
 

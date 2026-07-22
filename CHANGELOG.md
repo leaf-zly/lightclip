@@ -6,6 +6,20 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.0.3] - 2026-07-22
+
+### Fixed
+
+- Replaced the per-paste PowerShell process with direct Win32 focus restoration and keyboard input, removing process startup latency from paste-after-copy.
+- Waits for the LightClip WebView to finish hiding and verifies the captured target is foreground before sending `Ctrl+V`, so users no longer need to refocus the destination manually.
+- Restores the previously focused child control while avoiding restore operations on normal or maximized target windows.
+
+### Verified
+
+- Extended the packaged Windows end-to-end test with a real focused WinForms textbox.
+- The release now requires the packaged app to open through native `Alt+V`, select a known history item, restore the original textbox, and insert the item without manual focus changes.
+- Retained source integrity, PowerShell 5/7 parsing, TypeScript, renderer build, Rust host tests, and Tauri packaging checks.
+
 ## [2.0.2] - 2026-07-21
 
 ### Fixed
@@ -311,6 +325,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.0.3]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.3
 [2.0.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.2
 [2.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.1
 [2.0.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.0
