@@ -25,6 +25,7 @@ use uuid::Uuid;
 const STORE_VERSION: u32 = 1;
 const STORE_FILE_NAME: &str = "lightclip-store.json.br";
 const BACKUP_STORE_FILE_NAME: &str = "lightclip-store.json.br.bak";
+const ROLLING_BACKUP_DIRECTORY_NAME: &str = "backups";
 const LEGACY_STORE_FILE_NAME: &str = "lightclip-store.json";
 const STORAGE_CONFIG_FILE_NAME: &str = "lightclip-storage.json";
 const RELEASE_API_URL: &str = "https://api.github.com/repos/leaf-zly/lightclip/releases/latest";
@@ -130,6 +131,12 @@ struct AppSettings {
   global_shortcut: String,
   theme_accent: String,
   theme_mode: String,
+  sensitive_content_protection: bool,
+  sensitive_keywords: Vec<String>,
+  max_storage_bytes: u64,
+  automatic_backups: bool,
+  backup_interval_hours: u64,
+  backup_keep_count: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -225,6 +232,14 @@ struct UpdateCheckResult {
   latest_version: String,
   update_available: bool,
   release_url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageMaintenanceResult {
+  removed_items: usize,
+  before_bytes: u64,
+  after_bytes: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -340,6 +355,7 @@ pub fn run() {
       reset_storage_directory,
       open_storage_directory,
       update_settings,
+      optimize_storage,
       minimize_window,
       toggle_maximize_window,
       close_window,
@@ -565,6 +581,18 @@ fn open_storage_directory(runtime: State<'_, AppRuntime>) -> CommandResult<()> {
 }
 
 #[tauri::command]
+fn optimize_storage(app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<StorageMaintenanceResult> {
+  let result = runtime.store.lock().expect("store lock poisoned").optimize_storage();
+  match result {
+    Ok(result) => {
+      broadcast_state(&app, &runtime);
+      ok(result)
+    }
+    Err(error) => err(error.to_string()),
+  }
+}
+
+#[tauri::command]
 fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<AppSettings> {
   let (result, previous_shortcut) = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
@@ -685,6 +713,12 @@ struct AppSettingsPatch {
   global_shortcut: Option<String>,
   theme_accent: Option<String>,
   theme_mode: Option<String>,
+  sensitive_content_protection: Option<bool>,
+  sensitive_keywords: Option<Vec<String>>,
+  max_storage_bytes: Option<u64>,
+  automatic_backups: Option<bool>,
+  backup_interval_hours: Option<u64>,
+  backup_keep_count: Option<usize>,
 }
 
 impl ClipboardStore {
@@ -916,6 +950,26 @@ impl ClipboardStore {
     self.save()
   }
 
+  fn optimize_storage(&mut self) -> anyhow::Result<StorageMaintenanceResult> {
+    let before_bytes = self.storage_bytes();
+    let before_count = self.state.items.len();
+    self.state.items.sort_by(|left, right| {
+      right
+        .pinned()
+        .cmp(&left.pinned())
+        .then_with(|| right.updated_at().cmp(&left.updated_at()))
+    });
+    let mut seen = HashSet::new();
+    self.state.items.retain(|item| seen.insert(item.signature()));
+    self.trim_overflow();
+    self.save()?;
+    Ok(StorageMaintenanceResult {
+      removed_items: before_count.saturating_sub(self.state.items.len()),
+      before_bytes,
+      after_bytes: self.storage_bytes(),
+    })
+  }
+
   fn clear_by_kind(&mut self, kind: &str) -> anyhow::Result<()> {
     self.state.items.retain(|item| item.pinned() || item.kind() != kind);
     self.save()
@@ -1001,6 +1055,24 @@ impl ClipboardStore {
     if let Some(value) = patch.theme_mode {
       self.state.settings.theme_mode = value;
     }
+    if let Some(value) = patch.sensitive_content_protection {
+      self.state.settings.sensitive_content_protection = value;
+    }
+    if let Some(value) = patch.sensitive_keywords {
+      self.state.settings.sensitive_keywords = value;
+    }
+    if let Some(value) = patch.max_storage_bytes {
+      self.state.settings.max_storage_bytes = value;
+    }
+    if let Some(value) = patch.automatic_backups {
+      self.state.settings.automatic_backups = value;
+    }
+    if let Some(value) = patch.backup_interval_hours {
+      self.state.settings.backup_interval_hours = value;
+    }
+    if let Some(value) = patch.backup_keep_count {
+      self.state.settings.backup_keep_count = value;
+    }
     self.state.settings = normalize_settings(self.state.settings.clone());
     self.trim_overflow();
     self.save()?;
@@ -1034,6 +1106,7 @@ impl ClipboardStore {
       && !is_capture_temporarily_paused(settings.capture_paused_until)
       && text.len() >= settings.min_text_length
       && text.len() <= settings.max_text_length
+      && !is_sensitive_text(text, settings)
   }
 
   fn can_capture_image(&self, byte_size: usize) -> bool {
@@ -1099,6 +1172,33 @@ impl ClipboardStore {
     regular.truncate(self.state.settings.max_history_items);
     pinned.extend(regular);
     self.state.items = pinned;
+    self.trim_storage_budget();
+  }
+
+  fn trim_storage_budget(&mut self) {
+    let limit = self.state.settings.max_storage_bytes;
+    if limit == 0 {
+      return;
+    }
+
+    loop {
+      let estimated_bytes = serde_json::to_vec(&self.state).map(|payload| payload.len() as u64).unwrap_or(0);
+      if estimated_bytes <= limit {
+        break;
+      }
+      let Some(index) = self
+        .state
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| !item.pinned())
+        .min_by_key(|(_, item)| item.updated_at())
+        .map(|(index, _)| index)
+      else {
+        break;
+      };
+      self.state.items.remove(index);
+    }
   }
 
   fn load_storage_config(&mut self) {
@@ -1176,6 +1276,7 @@ impl ClipboardStore {
 
   fn save(&self) -> anyhow::Result<()> {
     fs::create_dir_all(&self.storage_directory)?;
+    self.maybe_create_rolling_backup();
     let payload = serde_json::to_string(&self.state)?;
     let encoded = compress_store_payload(&payload)?;
     parse_persisted_store(&decompress_store_payload(&encoded)?)?;
@@ -1185,6 +1286,45 @@ impl ClipboardStore {
     write_atomic(&self.file_path, &encoded)?;
     let _ = fs::remove_file(&self.legacy_file_path);
     Ok(())
+  }
+
+  fn maybe_create_rolling_backup(&self) {
+    if !self.state.settings.automatic_backups || !self.file_path.exists() {
+      return;
+    }
+    let directory = self.storage_directory.join(ROLLING_BACKUP_DIRECTORY_NAME);
+    let interval = Duration::from_secs(self.state.settings.backup_interval_hours.saturating_mul(3600));
+    let latest_age = fs::read_dir(&directory)
+      .ok()
+      .into_iter()
+      .flatten()
+      .filter_map(Result::ok)
+      .filter_map(|entry| entry.metadata().ok()?.modified().ok())
+      .max()
+      .and_then(|modified| modified.elapsed().ok());
+    if latest_age.is_some_and(|age| age < interval) {
+      return;
+    }
+    if fs::create_dir_all(&directory).is_err() {
+      return;
+    }
+    let backup = directory.join(format!("lightclip-store-{}.json.br", now_ms()));
+    if fs::copy(&self.file_path, backup).is_err() {
+      return;
+    }
+    let mut backups = fs::read_dir(&directory)
+      .ok()
+      .into_iter()
+      .flatten()
+      .filter_map(Result::ok)
+      .map(|entry| entry.path())
+      .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("br"))
+      .collect::<Vec<_>>();
+    backups.sort();
+    let remove_count = backups.len().saturating_sub(self.state.settings.backup_keep_count);
+    for path in backups.into_iter().take(remove_count) {
+      let _ = fs::remove_file(path);
+    }
   }
 }
 
@@ -1842,6 +1982,12 @@ fn default_settings() -> AppSettings {
     global_shortcut: "Alt+V".to_string(),
     theme_accent: "mint".to_string(),
     theme_mode: "system".to_string(),
+    sensitive_content_protection: false,
+    sensitive_keywords: Vec::new(),
+    max_storage_bytes: 256 * 1024 * 1024,
+    automatic_backups: true,
+    backup_interval_hours: 24,
+    backup_keep_count: 7,
   }
 }
 
@@ -1859,6 +2005,12 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
   settings.max_image_bytes = settings.max_image_bytes.clamp(128 * 1024, 100 * 1024 * 1024);
   settings.max_file_paths = settings.max_file_paths.clamp(1, 200);
   settings.retention_days = settings.retention_days.clamp(0, 3650);
+  if settings.max_storage_bytes > 0 {
+    settings.max_storage_bytes = settings.max_storage_bytes.clamp(1024 * 1024, 2 * 1024 * 1024 * 1024);
+  }
+  settings.backup_interval_hours = settings.backup_interval_hours.clamp(1, 24 * 30);
+  settings.backup_keep_count = settings.backup_keep_count.clamp(1, 30);
+  settings.sensitive_keywords = normalize_sensitive_keywords(settings.sensitive_keywords);
   settings.encrypt_store = false;
   settings.excluded_app_names = normalize_excluded_app_names(settings.excluded_app_names);
   settings.global_shortcut = settings.global_shortcut.trim().to_string();
@@ -1881,6 +2033,50 @@ fn normalize_pause_until(value: Option<i64>) -> Option<i64> {
     return None;
   }
   Some(timestamp.min(now + MAX_TEMPORARY_PAUSE_MS))
+}
+
+fn normalize_sensitive_keywords(values: Vec<String>) -> Vec<String> {
+  let mut seen = HashSet::new();
+  values
+    .into_iter()
+    .map(|value| value.trim().to_lowercase())
+    .filter(|value| !value.is_empty() && seen.insert(value.clone()))
+    .take(100)
+    .collect()
+}
+
+fn is_sensitive_text(text: &str, settings: &AppSettings) -> bool {
+  if !settings.sensitive_content_protection {
+    return false;
+  }
+  let normalized = text.trim().to_lowercase();
+  let built_in_keywords = ["password", "passwd", "密码", "验证码", "otp", "token", "secret", "api_key", "authorization:"];
+  if built_in_keywords.iter().any(|keyword| normalized.contains(keyword))
+    || settings.sensitive_keywords.iter().any(|keyword| normalized.contains(keyword))
+  {
+    return true;
+  }
+  let digits = normalized.chars().filter(char::is_ascii_digit).collect::<String>();
+  let only_code_characters = normalized.chars().all(|character| character.is_ascii_digit() || character.is_ascii_whitespace() || character == '-');
+  (only_code_characters && (4..=8).contains(&digits.len())) || (13..=19).contains(&digits.len()) && passes_luhn_check(&digits)
+}
+
+fn passes_luhn_check(digits: &str) -> bool {
+  let mut sum = 0;
+  let parity = digits.len() % 2;
+  for (index, character) in digits.chars().enumerate() {
+    let Some(mut value) = character.to_digit(10) else {
+      return false;
+    };
+    if index % 2 == parity {
+      value *= 2;
+      if value > 9 {
+        value -= 9;
+      }
+    }
+    sum += value;
+  }
+  sum > 0 && sum % 10 == 0
 }
 
 fn normalize_excluded_app_names(values: Vec<String>) -> Vec<String> {
@@ -2101,6 +2297,45 @@ mod tests {
     assert_eq!(parse_paste_target("123").expect("focused control is optional"), (123, 0));
     assert!(parse_paste_target("0;456").is_err());
     assert!(parse_paste_target("not-a-handle;456").is_err());
+  }
+
+  #[test]
+  fn sensitive_content_protection_detects_codes_cards_and_keywords() {
+    let mut settings = default_settings();
+    assert!(!is_sensitive_text("123456", &settings));
+    settings.sensitive_content_protection = true;
+    settings.sensitive_keywords = vec!["private phrase".to_string()];
+    assert!(is_sensitive_text("123456", &settings));
+    assert!(is_sensitive_text("4242 4242 4242 4242", &settings));
+    assert!(is_sensitive_text("my PRIVATE PHRASE value", &settings));
+    assert!(!is_sensitive_text("ordinary clipboard text", &settings));
+  }
+
+  #[test]
+  fn storage_budget_never_removes_pinned_items() {
+    let mut store = ClipboardStore::new(PathBuf::from(".")).expect("store should initialize");
+    store.state.settings.max_storage_bytes = 1;
+    store.state.items = vec![
+      ClipboardItem::Text {
+        id: "pinned".to_string(),
+        pinned: true,
+        copy_count: 0,
+        created_at: 1,
+        updated_at: 1,
+        text: "keep me".to_string(),
+      },
+      ClipboardItem::Text {
+        id: "regular".to_string(),
+        pinned: false,
+        copy_count: 0,
+        created_at: 2,
+        updated_at: 2,
+        text: "remove me".to_string(),
+      },
+    ];
+    store.trim_storage_budget();
+    assert_eq!(store.state.items.len(), 1);
+    assert_eq!(store.state.items[0].id(), "pinned");
   }
 
   #[cfg(windows)]

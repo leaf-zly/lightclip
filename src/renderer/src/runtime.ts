@@ -12,6 +12,7 @@ import type {
   StorageLocationResult,
   UpdateCheckResult,
 } from '../../shared/types'
+import type { StorageMaintenanceResult } from '../../shared/features'
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: unknown
@@ -55,6 +56,7 @@ const tauriLightClipApi: LightClipApi = {
   resetStorageDirectory: () => invoke<CommandResult<StorageLocationResult>>('reset_storage_directory'),
   openStorageDirectory: () => invoke<CommandResult>('open_storage_directory'),
   updateSettings: (settings: Partial<AppSettings>) => invoke<CommandResult<AppSettings>>('update_settings', { settings }),
+  optimizeStorage: () => invoke<CommandResult<StorageMaintenanceResult>>('optimize_storage'),
   minimizeWindow: () => invoke<void>('minimize_window'),
   toggleMaximizeWindow: () => invoke<void>('toggle_maximize_window'),
   closeWindow: () => invoke<void>('close_window'),

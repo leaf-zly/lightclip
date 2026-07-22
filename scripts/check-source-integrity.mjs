@@ -32,7 +32,7 @@ const criticalSources = [
   },
   {
     path: 'src-tauri/src/lib.rs',
-    requiredTokens: ['pub fn run()', 'start_clipboard_watcher', 'parse_persisted_store', 'create_tray', 'write_atomic'],
+    requiredTokens: ['pub fn run()', 'start_clipboard_watcher', 'parse_persisted_store', 'create_tray', 'write_atomic', 'optimize_storage', 'is_sensitive_text', 'maybe_create_rolling_backup'],
   },
   {
     path: 'src-tauri/tauri.conf.json',

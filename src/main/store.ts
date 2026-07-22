@@ -69,6 +69,12 @@ const defaultSettings: AppSettings = {
   globalShortcut: 'Alt+V',
   themeAccent: 'mint',
   themeMode: 'system',
+  sensitiveContentProtection: false,
+  sensitiveKeywords: [],
+  maxStorageBytes: 256 * 1024 * 1024,
+  automaticBackups: true,
+  backupIntervalHours: 24,
+  backupKeepCount: 7,
 }
 
 /**
@@ -779,6 +785,14 @@ function normalizeSettings(settings: AppSettings): AppSettings {
         : defaultSettings.globalShortcut,
     themeAccent: normalizeThemeAccent(settings.themeAccent),
     themeMode: normalizeThemeMode(settings.themeMode),
+    sensitiveContentProtection: Boolean(settings.sensitiveContentProtection),
+    sensitiveKeywords: Array.isArray(settings.sensitiveKeywords)
+      ? settings.sensitiveKeywords.filter((value): value is string => typeof value === 'string').slice(0, 100)
+      : [],
+    maxStorageBytes: clampInteger(settings.maxStorageBytes ?? defaultSettings.maxStorageBytes, 0, 2 * 1024 * 1024 * 1024),
+    automaticBackups: settings.automaticBackups !== false,
+    backupIntervalHours: clampInteger(settings.backupIntervalHours ?? 24, 1, 720),
+    backupKeepCount: clampInteger(settings.backupKeepCount ?? 7, 1, 30),
   }
 }
 
