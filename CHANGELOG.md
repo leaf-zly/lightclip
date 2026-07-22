@@ -6,6 +6,26 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.1.0] - 2026-07-22
+
+### Added
+
+- Added multi-term and quoted-phrase search with relative time filtering.
+- Added reusable pinned snippets and direct selection of the first nine filtered items with Ctrl plus a number key.
+- Added optional local sensitive-content filtering for credentials, verification codes, payment-card numbers, and custom keywords.
+- Added configurable rolling backups, a storage payload limit, and on-demand storage optimization.
+
+### Changed
+
+- Storage deduplication now preserves pinned snippets before newer regular duplicates.
+- Capacity trimming removes only the oldest non-pinned records and stops when only pinned snippets remain.
+- Normalized repository line endings to avoid source corruption across Windows PowerShell and PowerShell 7 workflows.
+
+### Verified
+
+- Added Rust tests for sensitive-content detection and pinned-item storage protection.
+- Retained source-integrity, TypeScript, renderer production build, Cargo lock, Tauri host, packaged shortcut, and real textbox paste tests.
+
 ## [2.0.3] - 2026-07-22
 
 ### Fixed
@@ -325,6 +345,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.0
 [2.0.3]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.3
 [2.0.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.2
 [2.0.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.1

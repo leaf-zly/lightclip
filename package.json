@@ -1,6 +1,6 @@
 {
   "name": "lightclip-electron",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "description": "A lightweight Windows clipboard history app built with Tauri.",

@@ -1,18 +1,21 @@
 # LightClip
 
-LightClip is a lightweight, local-first clipboard history app for Windows. Version 2.0 uses Tauri 2, Vue 3, TypeScript, and the system WebView2 runtime, replacing the bundled Electron runtime used by LightClip 1.x.
+LightClip is a lightweight, local-first clipboard history app for Windows. Version 2 uses Tauri 2, Vue 3, TypeScript, and the system WebView2 runtime, replacing the bundled Electron runtime used by LightClip 1.x.
 
 Clipboard data stays on your machine. LightClip does not include telemetry, cloud sync, or a background network service. The only network request is a manual update check against GitHub Releases.
 
-> Current version: `v2.0.3`. Windows packages are built by GitHub Actions and published through GitHub Releases.
+> Current version: `v2.1.0`. Windows packages are built by GitHub Actions and published through GitHub Releases.
 
 ## Features
 
-- Text history with deduplication, search, filters, pinning, preview, deletion, and bulk cleanup.
+- Text history with multi-term and quoted-phrase search, type and time filters, reusable pinned snippets, preview, deletion, and bulk cleanup.
+- `Ctrl + 1` through `Ctrl + 9` selects one of the first nine filtered results immediately.
 - Optional image history with PNG preview and clipboard restoration.
 - Optional file history with native Windows file-drop restoration and text fallback.
 - Brotli-compressed local storage with a configurable data directory.
-- Automatic backup recovery and unreadable-store quarantine.
+- Automatic backup recovery, configurable rolling backups, and unreadable-store quarantine.
+- Optional local sensitive-content filtering for credentials, verification codes, payment-card numbers, and custom keywords.
+- Configurable storage budget and on-demand deduplication that always protects pinned snippets.
 - Per-app privacy exclusions for password managers and other sensitive tools.
 - Optional paste-after-select behavior that returns input to the previous foreground window.
 - Configurable history limits, retention, image size, and file-count limits.
@@ -58,6 +61,9 @@ Closing the panel hides it to the tray. Left-click the tray icon to reopen it; r
 | Image history | Off | Stores PNG data URLs and can grow the local store quickly. |
 | File history | Off | Stores file paths only, never file contents. |
 | Excluded apps | Empty | Skips capture while a listed process is in the foreground. |
+| Sensitive-content protection | Off | Locally skips likely credentials, codes, card numbers, and custom keywords. |
+| Automatic backups | On | Creates a rolling backup every 24 hours and keeps seven copies by default. |
+| Storage limit | `256 MB` | Removes only the oldest non-pinned records when the approximate payload exceeds the limit. |
 | Paste after copy | Off | Restores the previous target and sends `Ctrl + V`. |
 | History limit | `300` | Applies to non-pinned records. |
 | Retention | Forever | Optional age-based cleanup for non-pinned records. |
@@ -73,6 +79,7 @@ Closing the panel hides it to the tray. Left-click the tray icon to reopen it; r
 | `Alt + V` | Show or hide LightClip. |
 | `Up` / `Down` | Move selection. |
 | `Enter` | Copy the selected item. |
+| `Ctrl + 1` ... `Ctrl + 9` | Copy one of the first nine filtered items. |
 | `Esc` | Hide the panel. |
 
 ## Data And Privacy
@@ -83,7 +90,7 @@ The active history file is:
 %APPDATA%\LightClip\lightclip-store.json.br
 ```
 
-LightClip writes compact JSON through Brotli compression and keeps `lightclip-store.json.br.bak` as a last-known-readable backup. A custom directory pointer is stored in `%APPDATA%\LightClip\lightclip-storage.json`.
+LightClip writes compact JSON through Brotli compression and keeps `lightclip-store.json.br.bak` as a last-known-readable backup. Optional rolling backups are stored under the active data directory in `backups`. A custom directory pointer is stored in `%APPDATA%\LightClip\lightclip-storage.json`.
 
 Version 2.0 does not expose the Electron 1.x account-encryption option. Before upgrading from an encrypted 1.x store, export history as JSON from LightClip 1.x, then import it into 2.0. Plain 1.x Brotli and legacy JSON stores are migrated automatically when readable.
 

@@ -28,13 +28,15 @@ import {
   TimerReset,
   Trash2,
   Upload,
+  Wrench,
   X,
 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
 import type { AppSettings, AppState, AppThemeAccent, AppThemeMode, ClipboardItem, ClipboardItemKind } from '../../shared/types'
 import { getLightClipApi } from './runtime'
-import { createItemTitle, describeItem, formatBytes, formatRelativeTime, matchesQuery } from './utils'
+import { createItemTitle, describeItem, formatBytes, formatRelativeTime } from './utils'
+import { matchesAdvancedQuery, matchesTimeFilter, type HistoryTimeFilter } from './search'
 
 /**
  * Theme accent metadata used to render the compact palette picker.
@@ -90,7 +92,7 @@ const historyFilters: readonly HistoryFilterOption[] = [
   { id: 'text', label: '文本' },
   { id: 'image', label: '图片' },
   { id: 'file', label: '文件' },
-  { id: 'pinned', label: '固定' },
+  { id: 'pinned', label: '片段' },
 ]
 
 const state = ref<AppState>({
@@ -119,10 +121,17 @@ const state = ref<AppState>({
     globalShortcut: DEFAULT_SHORTCUT,
     themeAccent: 'mint',
     themeMode: 'system',
+    sensitiveContentProtection: false,
+    sensitiveKeywords: [],
+    maxStorageBytes: 256 * 1024 * 1024,
+    automaticBackups: true,
+    backupIntervalHours: 24,
+    backupKeepCount: 7,
   },
 })
 const query = ref('')
 const activeFilter = ref<HistoryFilterOption['id']>('all')
+const timeFilter = ref<HistoryTimeFilter>('all')
 const selectedIndex = ref(0)
 const visibleLimit = ref(INITIAL_RENDER_LIMIT)
 const showSettings = ref(false)
@@ -137,7 +146,7 @@ let toastTimer: number | null = null
 
 const filteredItems = computed(() =>
   state.value.items.filter((item) => {
-    if (!matchesQuery(item, query.value)) {
+    if (!matchesAdvancedQuery(item, query.value) || !matchesTimeFilter(item, timeFilter.value, now.value)) {
       return false
     }
 
@@ -474,6 +483,32 @@ function filterCount(filter: HistoryFilterOption['id']): number {
   return typeCounts.value[filter]
 }
 
+function updateSensitiveKeywords(value: string): void {
+  const sensitiveKeywords = Array.from(
+    new Set(
+      value
+        .split(/[，,;；\n]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  )
+  updateSettings({ sensitiveKeywords })
+}
+
+async function optimizeStorage(): Promise<void> {
+  if (!lightClip.optimizeStorage) {
+    showToast('当前运行模式暂不支持存储整理')
+    return
+  }
+  const result = await lightClip.optimizeStorage()
+  if (!result.ok || !result.data) {
+    showToast(result.error ?? '存储整理失败')
+    return
+  }
+  const savedBytes = Math.max(0, result.data.beforeBytes - result.data.afterBytes)
+  showToast('已移除 ' + result.data.removedItems + ' 条，释放 ' + formatBytes(savedBytes))
+}
+
 function updateExcludedAppNames(value: string): void {
   const excludedAppNames = Array.from(
     new Set(
@@ -500,6 +535,15 @@ function formatClock(timestamp: number): string {
 }
 
 function handleKeyboard(event: KeyboardEvent): void {
+  if (event.ctrlKey && !event.altKey && !event.metaKey && /^[1-9]$/.test(event.key)) {
+    const item = filteredItems.value[Number(event.key) - 1]
+    if (item) {
+      event.preventDefault()
+      void copyItem(item)
+    }
+    return
+  }
+
   if (event.key === 'Escape') {
     if (previewItem.value) {
       previewItem.value = null
@@ -554,7 +598,7 @@ function handleKeyboard(event: KeyboardEvent): void {
           <div class="brand-mark">L</div>
           <div>
             <h1>LightClip</h1>
-            <p>{{ captureStatus }} · {{ state.items.length }} 条历史 · {{ pinnedCount }} 条固定 · {{ storageLabel }}</p>
+            <p>{{ captureStatus }} · {{ state.items.length }} 条历史 · {{ pinnedCount }} 条片段 · {{ storageLabel }}</p>
           </div>
         </div>
 
@@ -591,7 +635,7 @@ function handleKeyboard(event: KeyboardEvent): void {
           ref="searchInput"
           v-model="query"
           type="search"
-          placeholder="搜索复制过的内容"
+          placeholder="搜索历史内容"
           autocomplete="off"
           spellcheck="false"
         />
@@ -617,6 +661,12 @@ function handleKeyboard(event: KeyboardEvent): void {
             <b>{{ filterCount(filter.id) }}</b>
           </button>
         </div>
+        <select v-model="timeFilter" class="filter-select" title="时间范围" aria-label="时间范围">
+          <option value="all">全部时间</option>
+          <option value="today">今天</option>
+          <option value="week">近 7 天</option>
+          <option value="month">近 30 天</option>
+        </select>
       </div>
 
       <section v-if="showSettings" class="settings-pane settings-pane-expanded" aria-label="设置">
@@ -714,6 +764,36 @@ function handleKeyboard(event: KeyboardEvent): void {
 
         <div class="setting-row">
           <div>
+            <strong>敏感内容保护</strong>
+            <span>跳过可能包含密码、验证码、令牌或银行卡号的文本</span>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="state.settings.sensitiveContentProtection"
+              @change="updateSettings({ sensitiveContentProtection: ($event.target as HTMLInputElement).checked })"
+            />
+            <span class="switch-track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <strong>自动备份</strong>
+            <span>在存储目录保留定时滚动备份</span>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="state.settings.automaticBackups"
+              @change="updateSettings({ automaticBackups: ($event.target as HTMLInputElement).checked })"
+            />
+            <span class="switch-track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div>
             <strong>本地加密</strong>
             <span>{{ state.encryptionAvailable ? '使用 Windows 账户级加密保护本机存储' : '当前系统暂不可用' }}</span>
           </div>
@@ -757,6 +837,20 @@ function handleKeyboard(event: KeyboardEvent): void {
           />
         </div>
 
+        <div class="setting-row exclusion-row">
+          <div>
+            <strong>敏感关键词</strong>
+            <span>命中任一关键词的文本不会进入历史</span>
+          </div>
+          <input
+            class="setting-text-input"
+            type="text"
+            :value="state.settings.sensitiveKeywords.join(', ')"
+            placeholder="私钥, access token"
+            @change="updateSensitiveKeywords(($event.target as HTMLInputElement).value)"
+          />
+        </div>
+
         <div class="setting-row data-row">
           <div>
             <strong>数据管理</strong>
@@ -770,6 +864,10 @@ function handleKeyboard(event: KeyboardEvent): void {
             <button class="text-button" type="button" title="导入历史" @click="importHistory">
               <Upload :size="16" />
               导入
+            </button>
+            <button class="text-button" type="button" title="整理存储" @click="optimizeStorage">
+              <Wrench :size="16" />
+              整理
             </button>
             <button class="text-button" type="button" title="检查更新" @click="checkForUpdates">
               <RefreshCw :size="16" />
@@ -848,6 +946,36 @@ function handleKeyboard(event: KeyboardEvent): void {
               max="200"
               :value="state.settings.maxFilePaths"
               @change="updateSettings({ maxFilePaths: Number(($event.target as HTMLInputElement).value) })"
+            />
+          </label>
+          <label>
+            <span>存储上限 (MB)</span>
+            <input
+              type="number"
+              min="0"
+              max="2048"
+              :value="Math.round(state.settings.maxStorageBytes / 1024 / 1024)"
+              @change="updateSettings({ maxStorageBytes: Number(($event.target as HTMLInputElement).value) * 1024 * 1024 })"
+            />
+          </label>
+          <label>
+            <span>备份间隔 (小时)</span>
+            <input
+              type="number"
+              min="1"
+              max="720"
+              :value="state.settings.backupIntervalHours"
+              @change="updateSettings({ backupIntervalHours: Number(($event.target as HTMLInputElement).value) })"
+            />
+          </label>
+          <label>
+            <span>备份保留数量</span>
+            <input
+              type="number"
+              min="1"
+              max="30"
+              :value="state.settings.backupKeepCount"
+              @change="updateSettings({ backupKeepCount: Number(($event.target as HTMLInputElement).value) })"
             />
           </label>
           <label>
