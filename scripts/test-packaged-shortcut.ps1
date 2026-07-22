@@ -70,6 +70,14 @@ public static class LightClipShortcutProbe
         keybd_event(alt, 0, keyUp, UIntPtr.Zero);
     }
 
+    public static void SendEnter()
+    {
+        const byte enter = 0x0D;
+        const uint keyUp = 0x0002;
+        keybd_event(enter, 0, 0, UIntPtr.Zero);
+        keybd_event(enter, 0, keyUp, UIntPtr.Zero);
+    }
+
     public static bool IsAltVRegistered()
     {
         const int probeId = 0x4C43;
@@ -88,9 +96,46 @@ public static class LightClipShortcutProbe
 '@
 
 $resolvedExecutable = Resolve-Path -LiteralPath $ExecutablePath
-$process = Start-Process -FilePath $resolvedExecutable -ArgumentList '--hidden' -PassThru -WindowStyle Hidden
+$storeDirectory = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'LightClip'
+$storeBackupDirectory = "$storeDirectory.packaged-test-$([Guid]::NewGuid().ToString('N'))"
+$expectedText = "LightClip packaged paste test $([Guid]::NewGuid().ToString('N'))"
+$form = $null
+$textBox = $null
+$process = $null
+
+if (Test-Path -LiteralPath $storeDirectory) {
+  Move-Item -LiteralPath $storeDirectory -Destination $storeBackupDirectory
+}
+New-Item -ItemType Directory -Path $storeDirectory -Force | Out-Null
+$timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$testStore = @{
+  version = 1
+  settings = @{
+    captureEnabled = $false
+    pasteAfterCopy = $true
+    globalShortcut = 'Alt+V'
+  }
+  items = @(
+    @{
+      kind = 'text'
+      id = 'packaged-paste-test'
+      pinned = $false
+      copyCount = 0
+      createdAt = $timestamp
+      updatedAt = $timestamp
+      text = $expectedText
+    }
+  )
+}
+$storeJson = $testStore | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText(
+  (Join-Path $storeDirectory 'lightclip-store.json'),
+  $storeJson,
+  ([Text.UTF8Encoding]::new($false))
+)
 
 try {
+  $process = Start-Process -FilePath $resolvedExecutable -ArgumentList '--hidden' -PassThru -WindowStyle Hidden
   $window = [IntPtr]::Zero
   $windowDeadline = [DateTime]::UtcNow.AddSeconds(15)
   while ($window -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $windowDeadline) {
@@ -123,6 +168,22 @@ try {
     throw 'The packaged LightClip process did not register Alt+V with Windows.'
   }
 
+  Add-Type -AssemblyName System.Windows.Forms
+  $form = New-Object System.Windows.Forms.Form
+  $form.Text = 'LightClip Paste Target'
+  $form.Width = 480
+  $form.Height = 160
+  $form.StartPosition = 'CenterScreen'
+  $textBox = New-Object System.Windows.Forms.TextBox
+  $textBox.Dock = [System.Windows.Forms.DockStyle]::Fill
+  $textBox.Multiline = $true
+  $form.Controls.Add($textBox)
+  $form.Show()
+  $form.Activate()
+  [void]$textBox.Focus()
+  [System.Windows.Forms.Application]::DoEvents()
+  Start-Sleep -Milliseconds 100
+
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
   [LightClipShortcutProbe]::SendAltV()
   $shortcutDeadline = [DateTime]::UtcNow.AddSeconds(3)
@@ -136,10 +197,36 @@ try {
   }
 
   Write-Host "Packaged Alt+V opened LightClip in $($stopwatch.ElapsedMilliseconds) ms."
+
+  # Visibility can precede the first WebView render on a cold CI machine.
+  Start-Sleep -Milliseconds 150
+  [LightClipShortcutProbe]::SendEnter()
+  $pasteDeadline = [DateTime]::UtcNow.AddSeconds(3)
+  while ($textBox.Text -ne $expectedText -and [DateTime]::UtcNow -lt $pasteDeadline) {
+    [System.Windows.Forms.Application]::DoEvents()
+    Start-Sleep -Milliseconds 25
+  }
+  if ($textBox.Text -ne $expectedText) {
+    throw "Paste-after-copy did not fill the focused textbox. Actual text: '$($textBox.Text)'"
+  }
+  Write-Host 'Packaged paste-after-copy restored the focused textbox and inserted the selected item.'
 }
 finally {
-  $process.Refresh()
-  if (-not $process.HasExited) {
-    Stop-Process -Id $process.Id -Force
+  if ($null -ne $form) {
+    $form.Close()
+    $form.Dispose()
+  }
+  if ($null -ne $process) {
+    $process.Refresh()
+    if (-not $process.HasExited) {
+      Stop-Process -Id $process.Id -Force
+      $process.WaitForExit()
+    }
+  }
+  if (Test-Path -LiteralPath $storeDirectory) {
+    Remove-Item -LiteralPath $storeDirectory -Recurse -Force
+  }
+  if (Test-Path -LiteralPath $storeBackupDirectory) {
+    Move-Item -LiteralPath $storeBackupDirectory -Destination $storeDirectory
   }
 }
