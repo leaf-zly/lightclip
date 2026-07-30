@@ -1,24 +1,16 @@
-# LightClip v2.1.0
+# LightClip v2.1.1
 
-This feature release expands local privacy, search, reusable snippets, and storage maintenance while keeping clipboard data on the device.
+This patch prevents an obsolete Electron startup entry from launching a second LightClip runtime with a different icon after Windows restarts.
 
-## Added
+## Fixed
 
-- Multi-term and quoted-phrase search with Today, 7-day, and 30-day filters.
-- Reusable pinned snippets and Ctrl plus number selection for the first nine filtered results.
-- Optional sensitive-content protection with built-in credential, verification-code, token, and payment-card detection plus custom keywords.
-- Configurable storage budget, on-demand deduplication, and timestamped rolling backups.
-
-## Safety
-
-- Sensitive-content detection runs locally and is disabled by default to avoid surprising capture changes.
-- Capacity cleanup never removes pinned snippets.
-- Rolling backups remain local Brotli-compressed files and follow the configured storage directory.
+- Removes legacy `electron.app.LightClip` and `electron.app.Electron` values from the current-user Windows Run key.
+- Keeps only the current Tauri `LightClip` launch-at-login entry.
+- Prevents the retired Electron process and its old checklist icon from appearing after sign-in.
 
 ## Verification
 
-- Source integrity, TypeScript, and renderer production builds.
-- Rust tests for sensitive detection, metadata migration, storage limits, native shortcut capture, and paste target parsing.
+- Rust tests for current and legacy startup registry arguments.
 - GitHub-hosted Tauri compilation, NSIS packaging, native Alt+V startup, and real focused-textbox paste-after-copy testing.
 
 ## Downloads
