@@ -32,6 +32,9 @@ const RELEASE_API_URL: &str = "https://api.github.com/repos/leaf-zly/lightclip/r
 const RELEASE_URL_PREFIX: &str = "https://github.com/leaf-zly/lightclip/";
 const APP_DATA_DIRECTORY_NAME: &str = "LightClip";
 const LEGACY_TAURI_DATA_DIRECTORY_NAME: &str = "lightclip-electron";
+const WINDOWS_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+const CURRENT_STARTUP_ENTRY_NAME: &str = "LightClip";
+const LEGACY_STARTUP_ENTRY_NAMES: [&str; 2] = ["electron.app.LightClip", "electron.app.Electron"];
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const MAX_TEMPORARY_PAUSE_MS: i64 = DAY_MS;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -2119,32 +2122,45 @@ fn is_missing_store(error: &anyhow::Error) -> bool {
 }
 
 fn apply_launch_at_login(enabled: bool) {
+  remove_legacy_launch_at_login_entries();
   let Ok(exe) = std::env::current_exe() else {
     return;
   };
   let entry = format!("\"{}\" --hidden", exe.to_string_lossy());
-  let args = if enabled {
-    vec![
+  let args = launch_at_login_args(CURRENT_STARTUP_ENTRY_NAME, enabled.then_some(entry.as_str()));
+  let _ = run_hidden_command("reg.exe", &args);
+}
+
+fn remove_legacy_launch_at_login_entries() {
+  // Electron 1.x used app-generated value names. Leaving either entry behind
+  // starts the retired runtime at sign-in with a different icon and memory profile.
+  for entry_name in LEGACY_STARTUP_ENTRY_NAMES {
+    let args = launch_at_login_args(entry_name, None);
+    let _ = run_hidden_command("reg.exe", &args);
+  }
+}
+
+fn launch_at_login_args(entry_name: &str, command: Option<&str>) -> Vec<String> {
+  match command {
+    Some(command) => vec![
       "add".to_string(),
-      r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run".to_string(),
+      WINDOWS_RUN_KEY.to_string(),
       "/v".to_string(),
-      "LightClip".to_string(),
+      entry_name.to_string(),
       "/t".to_string(),
       "REG_SZ".to_string(),
       "/d".to_string(),
-      entry,
+      command.to_string(),
       "/f".to_string(),
-    ]
-  } else {
-    vec![
+    ],
+    None => vec![
       "delete".to_string(),
-      r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run".to_string(),
+      WINDOWS_RUN_KEY.to_string(),
       "/v".to_string(),
-      "LightClip".to_string(),
+      entry_name.to_string(),
       "/f".to_string(),
-    ]
-  };
-  let _ = run_hidden_command("reg.exe", &args);
+    ],
+  }
 }
 
 fn fetch_latest_release() -> anyhow::Result<(String, String)> {
@@ -2336,6 +2352,29 @@ mod tests {
     store.trim_storage_budget();
     assert_eq!(store.state.items.len(), 1);
     assert_eq!(store.state.items[0].id(), "pinned");
+  }
+
+  #[test]
+  fn startup_registry_arguments_target_current_and_legacy_entries() {
+    let add_args = launch_at_login_args(CURRENT_STARTUP_ENTRY_NAME, Some(r#""C:\LightClip\lightclip.exe" --hidden"#));
+    assert_eq!(add_args[0], "add");
+    assert_eq!(add_args[1], WINDOWS_RUN_KEY);
+    assert_eq!(add_args[3], CURRENT_STARTUP_ENTRY_NAME);
+    assert_eq!(add_args[7], r#""C:\LightClip\lightclip.exe" --hidden"#);
+
+    for legacy_name in LEGACY_STARTUP_ENTRY_NAMES {
+      let delete_args = launch_at_login_args(legacy_name, None);
+      assert_eq!(
+        delete_args,
+        vec![
+          "delete".to_string(),
+          WINDOWS_RUN_KEY.to_string(),
+          "/v".to_string(),
+          legacy_name.to_string(),
+          "/f".to_string(),
+        ]
+      );
+    }
   }
 
   #[cfg(windows)]

@@ -6,6 +6,19 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.1.1] - 2026-07-30
+
+### Fixed
+
+- Removes legacy `electron.app.LightClip` and `electron.app.Electron` startup values when the Tauri host starts or launch-at-login changes.
+- Prevents Windows sign-in from launching the retired Electron runtime with a different tray icon and memory profile alongside the current Tauri app.
+- Keeps one authoritative `LightClip` startup value pointing at the currently running packaged executable.
+
+### Verified
+
+- Added Rust coverage for current and legacy Windows startup registry arguments.
+- Retained source-integrity, TypeScript, renderer build, Tauri host, packaged shortcut, and real textbox paste tests.
+
 ## [2.1.0] - 2026-07-22
 
 ### Added
@@ -345,6 +358,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.1
 [2.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.0
 [2.0.3]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.3
 [2.0.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.2
