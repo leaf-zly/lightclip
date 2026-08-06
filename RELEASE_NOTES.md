@@ -1,16 +1,23 @@
-# LightClip v2.1.1
+# LightClip v2.1.2
 
-This patch prevents an obsolete Electron startup entry from launching a second LightClip runtime with a different icon after Windows restarts.
+This performance patch keeps large text, image, and file histories responsive during capture, shortcut activation, and item selection.
 
 ## Fixed
 
-- Removes legacy `electron.app.LightClip` and `electron.app.Electron` values from the current-user Windows Run key.
-- Keeps only the current Tauri `LightClip` launch-at-login entry.
-- Prevents the retired Electron process and its old checklist icon from appearing after sign-in.
+- Uses a fast Brotli persistence profile for routine clipboard writes instead of quality 11 recompression.
+- Keeps Alt+V panel activation independent from history persistence and full-state serialization.
+- Sends a single inserted or refreshed clipboard record to the renderer instead of retransmitting the complete history.
+- Avoids deep Vue reactivity overhead for large immutable history snapshots.
+
+## Storage Safety
+
+- Existing history files remain fully compatible and no records are removed during migration.
+- Writes still perform Brotli round-trip validation, preserve the previous backup, and atomically replace the active store.
+- On the reported 937-item store, compressed size increases by approximately 11% in exchange for reducing compression from about 25.1 seconds to about 150 milliseconds.
 
 ## Verification
 
-- Rust tests for current and legacy startup registry arguments.
+- Source integrity, TypeScript, renderer production build, Cargo lock, and large-payload Brotli round-trip coverage.
 - GitHub-hosted Tauri compilation, NSIS packaging, native Alt+V startup, and real focused-textbox paste-after-copy testing.
 
 ## Downloads

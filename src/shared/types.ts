@@ -131,6 +131,16 @@ export interface AppState {
 }
 
 /**
+ * Incremental history update emitted after one clipboard record is inserted or refreshed.
+ */
+export interface HistoryItemUpsert {
+  /** The canonical persisted record after capture or copy-count updates. */
+  item: ClipboardItem
+  /** Current compressed store size after the record has been persisted. */
+  storageBytes: number
+}
+
+/**
  * Metadata returned after moving or resetting the storage location.
  */
 export interface StorageLocationResult {
@@ -281,4 +291,6 @@ export interface LightClipApi {
   quit: () => Promise<void>
   /** Subscribes to state snapshots pushed from the main process. */
   onStateChanged: (callback: (state: AppState) => void) => () => void
+  /** Subscribes to lightweight single-record updates when supported by the runtime. */
+  onHistoryItemUpserted?: (callback: (update: HistoryItemUpsert) => void) => () => void
 }
