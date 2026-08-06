@@ -28,6 +28,7 @@ const BACKUP_STORE_FILE_NAME: &str = "lightclip-store.json.br.bak";
 const ROLLING_BACKUP_DIRECTORY_NAME: &str = "backups";
 const LEGACY_STORE_FILE_NAME: &str = "lightclip-store.json";
 const STORAGE_CONFIG_FILE_NAME: &str = "lightclip-storage.json";
+const STORE_COMPRESSION_QUALITY: u32 = 4;
 const RELEASE_API_URL: &str = "https://api.github.com/repos/leaf-zly/lightclip/releases/latest";
 const RELEASE_URL_PREFIX: &str = "https://github.com/leaf-zly/lightclip/";
 const APP_DATA_DIRECTORY_NAME: &str = "LightClip";
@@ -153,6 +154,13 @@ struct AppState {
   storage_compression: String,
   storage_encrypted: bool,
   encryption_available: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryItemUpsert {
+  item: ClipboardItem,
+  storage_bytes: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -435,11 +443,19 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
     }
   }
 
-  {
+  let history_update = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
-    let _ = store.touch_copied_item(&id);
+    match store.touch_copied_item(&id) {
+      Ok(Some(item)) => Some(HistoryItemUpsert {
+        item,
+        storage_bytes: store.storage_bytes(),
+      }),
+      Ok(None) | Err(_) => None,
+    }
+  };
+  if let Some(update) = history_update {
+    emit_history_item_upserted(&app, update);
   }
-  broadcast_state(&app, &runtime);
 
   if settings.paste_after_copy {
     let target = runtime.paste_target.lock().ok().and_then(|mut value| value.take());
@@ -1415,13 +1431,14 @@ fn start_clipboard_watcher(app: AppHandle, runtime: AppRuntime) {
     if !should_record {
       continue;
     }
-    let recorded = runtime
-      .store
-      .lock()
-      .map(|mut store| store.record_snapshot(snapshot).ok().flatten().is_some())
-      .unwrap_or(false);
-    if recorded {
-      broadcast_state(&app, &runtime);
+    let history_update = runtime.store.lock().ok().and_then(|mut store| {
+      store.record_snapshot(snapshot).ok().flatten().map(|item| HistoryItemUpsert {
+        item,
+        storage_bytes: store.storage_bytes(),
+      })
+    });
+    if let Some(update) = history_update {
+      emit_history_item_upserted(&app, update);
     }
   });
 }
@@ -1437,7 +1454,6 @@ fn show_panel(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()> {
   };
   window.show()?;
   window.set_focus()?;
-  broadcast_state(app, runtime);
   Ok(())
 }
 
@@ -1452,6 +1468,10 @@ fn broadcast_state(app: &AppHandle, runtime: &AppRuntime) {
   if let Ok(store) = runtime.store.lock() {
     let _ = app.emit("state-changed", store.state_snapshot());
   }
+}
+
+fn emit_history_item_upserted(app: &AppHandle, update: HistoryItemUpsert) {
+  let _ = app.emit("history-item-upserted", update);
 }
 
 fn write_item_to_clipboard(item: &ClipboardItem, settings: &AppSettings) -> anyhow::Result<String> {
@@ -1769,7 +1789,9 @@ fn read_compressed_store_file(path: &Path) -> anyhow::Result<PersistedStore> {
 fn compress_store_payload(payload: &str) -> anyhow::Result<Vec<u8>> {
   let mut encoded = Vec::new();
   {
-    let mut writer = brotli::CompressorWriter::new(&mut encoded, 4096, 11, 22);
+    // Quality 11 takes tens of seconds for image-heavy histories; quality 4
+    // retains Brotli's size benefit while keeping interactive writes sub-second.
+    let mut writer = brotli::CompressorWriter::new(&mut encoded, 4096, STORE_COMPRESSION_QUALITY, 22);
     writer.write_all(payload.as_bytes())?;
   }
   Ok(encoded)
@@ -2286,6 +2308,46 @@ mod tests {
     assert_eq!(serialized["createdAt"], 100);
     assert_eq!(serialized["updatedAt"], 200);
     assert!(serialized.get("copy_count").is_none());
+  }
+
+  #[test]
+  fn routine_compression_stays_interactive_for_image_heavy_payload() {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut random = 0x9e37_79b9_u32;
+    let mut data_url = String::with_capacity(8_000_022);
+    data_url.push_str("data:image/png;base64,");
+    for _ in 0..8_000_000 {
+      // Deterministic high-entropy base64 approximates an embedded PNG without test fixtures.
+      random ^= random << 13;
+      random ^= random >> 17;
+      random ^= random << 5;
+      data_url.push(ALPHABET[(random & 63) as usize] as char);
+    }
+    let payload = serde_json::json!({
+      "version": STORE_VERSION,
+      "settings": default_settings(),
+      "items": [{
+        "kind": "image",
+        "id": "large-image",
+        "pinned": false,
+        "copyCount": 0,
+        "createdAt": 1,
+        "updatedAt": 1,
+        "dataUrl": data_url,
+        "width": 1920,
+        "height": 1080,
+        "byteSize": 6_000_000,
+      }],
+    })
+    .to_string();
+
+    let started_at = std::time::Instant::now();
+    let encoded = compress_store_payload(&payload).expect("payload should compress");
+    let elapsed = started_at.elapsed();
+    let decoded = decompress_store_payload(&encoded).expect("payload should decompress");
+    assert_eq!(decoded, payload);
+    assert!(elapsed < Duration::from_secs(5), "routine compression took {elapsed:?}");
+    parse_persisted_store(&decoded).expect("round-tripped payload should remain valid");
   }
 
   #[test]

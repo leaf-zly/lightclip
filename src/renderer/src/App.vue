@@ -31,9 +31,17 @@ import {
   Wrench,
   X,
 } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
-import type { AppSettings, AppState, AppThemeAccent, AppThemeMode, ClipboardItem, ClipboardItemKind } from '../../shared/types'
+import type {
+  AppSettings,
+  AppState,
+  AppThemeAccent,
+  AppThemeMode,
+  ClipboardItem,
+  ClipboardItemKind,
+  HistoryItemUpsert,
+} from '../../shared/types'
 import { getLightClipApi } from './runtime'
 import { createItemTitle, describeItem, formatBytes, formatRelativeTime } from './utils'
 import { matchesAdvancedQuery, matchesTimeFilter, type HistoryTimeFilter } from './search'
@@ -95,7 +103,7 @@ const historyFilters: readonly HistoryFilterOption[] = [
   { id: 'pinned', label: '片段' },
 ]
 
-const state = ref<AppState>({
+const state = shallowRef<AppState>({
   items: [],
   storageBytes: 0,
   storageDirectory: '',
@@ -141,6 +149,7 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const now = ref(Date.now())
 
 let unsubscribeState: (() => void) | null = null
+let unsubscribeHistoryItem: (() => void) | null = null
 let clockTimer: number | null = null
 let toastTimer: number | null = null
 
@@ -215,6 +224,7 @@ onMounted(async () => {
   unsubscribeState = lightClip.onStateChanged((nextState) => {
     state.value = nextState
   })
+  unsubscribeHistoryItem = lightClip.onHistoryItemUpserted?.(applyHistoryItemUpsert) ?? null
   clockTimer = window.setInterval(() => {
     now.value = Date.now()
   }, 30_000)
@@ -223,6 +233,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   unsubscribeState?.()
+  unsubscribeHistoryItem?.()
   if (clockTimer) {
     window.clearInterval(clockTimer)
   }
@@ -230,6 +241,26 @@ onBeforeUnmount(() => {
     window.clearTimeout(toastTimer)
   }
 })
+
+/**
+ * Merges one persisted history record without replacing the complete multi-megabyte state snapshot.
+ *
+ * @param update Canonical record and compressed store size emitted by the Tauri host.
+ */
+function applyHistoryItemUpsert(update: HistoryItemUpsert): void {
+  const items = state.value.items.filter((item) => item.id !== update.item.id)
+  items.push(update.item)
+  items.sort(
+    (left, right) =>
+      Number(right.pinned) - Number(left.pinned) ||
+      right.updatedAt - left.updatedAt,
+  )
+  state.value = {
+    ...state.value,
+    items,
+    storageBytes: update.storageBytes,
+  }
+}
 
 watch([filteredItems, query, activeFilter], () => {
   visibleLimit.value = INITIAL_RENDER_LIMIT

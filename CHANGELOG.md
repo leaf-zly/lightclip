@@ -6,6 +6,21 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.1.2] - 2026-08-06
+
+### Fixed
+
+- Reduces image-heavy history persistence from multi-second Brotli quality-11 recompression to an interactive quality-4 write path while retaining compressed, verified, atomic storage.
+- Prevents clipboard capture from blocking global-shortcut panel activation on the shared store lock.
+- Replaces full-state broadcasts for capture and copy-count updates with incremental single-item events.
+- Uses shallow renderer state for large history collections to avoid deep Vue proxy creation.
+
+### Verified
+
+- Benchmarked the reported 937-item, 8.47 MB decoded store: compression dropped from about 25.1 seconds to about 150 milliseconds, with an approximately 11% compressed-size increase.
+- Added Brotli round-trip coverage for a large store payload.
+- Retained source-integrity, TypeScript, renderer production build, Cargo lock, Tauri host, packaged shortcut, and real textbox paste tests.
+
 ## [2.1.1] - 2026-07-30
 
 ### Fixed
@@ -358,6 +373,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.1.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.2
 [2.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.1
 [2.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.0
 [2.0.3]: https://github.com/leaf-zly/lightclip/releases/tag/v2.0.3

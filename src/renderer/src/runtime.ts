@@ -8,6 +8,7 @@ import type {
   CommandResult,
   HistoryExportResult,
   HistoryImportResult,
+  HistoryItemUpsert,
   LightClipApi,
   StorageLocationResult,
   UpdateCheckResult,
@@ -67,6 +68,26 @@ const tauriLightClipApi: LightClipApi = {
     let disposed = false
 
     void listen<AppState>('state-changed', (event) => {
+      callback(event.payload)
+    }).then((nextUnlisten) => {
+      if (disposed) {
+        nextUnlisten()
+        return
+      }
+
+      unlisten = nextUnlisten
+    })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  },
+  onHistoryItemUpserted: (callback) => {
+    let unlisten: (() => void) | null = null
+    let disposed = false
+
+    void listen<HistoryItemUpsert>('history-item-upserted', (event) => {
       callback(event.payload)
     }).then((nextUnlisten) => {
       if (disposed) {
