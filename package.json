@@ -1,6 +1,6 @@
 {
   "name": "lightclip-electron",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "description": "A lightweight Windows clipboard history app built with Tauri.",
@@ -26,7 +26,8 @@
     "electron:preview": "pnpm electron:build && electron .",
     "build:renderer": "vite build",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test": "vitest run"
   },
   "build": {
     "appId": "dev.lightclip.app",
@@ -68,6 +69,8 @@
     "@lucide/vue": "^1.0.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "~2.7.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "vue": "^3.5.25"
   },
   "devDependencies": {
@@ -80,6 +83,7 @@
     "electron-builder": "^26.15.3",
     "typescript": "^5.9.3",
     "vite": "^7.2.7",
+    "vitest": "^3.2.7",
     "vue-tsc": "^3.1.8",
     "wait-on": "^9.0.3"
   },

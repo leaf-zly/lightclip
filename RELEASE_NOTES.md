@@ -1,28 +1,29 @@
-# LightClip v2.1.2
+# LightClip v2.2.0
 
-This performance patch keeps large text, image, and file histories responsive during capture, shortcut activation, and item selection.
+This feature release adds secure in-app updates, a compact Win+V-inspired panel, reliable atomic paste input, and target-monitor placement.
+
+## Added
+
+- Signed online update checks backed by GitHub Releases, including release notes, download progress, signature verification, installation, and relaunch.
+- Standard and compact interface modes with a toolbar shortcut and persisted setting.
+- Target-monitor placement based on the foreground window captured when LightClip opens.
+- DPI-aware standard and compact window geometry across multi-monitor Windows setups.
 
 ## Fixed
 
-- Uses a fast Brotli persistence profile for routine clipboard writes instead of quality 11 recompression.
-- Keeps Alt+V panel activation independent from history persistence and full-state serialization.
-- Sends a single inserted or refreshed clipboard record to the renderer instead of retransmitting the complete history.
-- Avoids deep Vue reactivity overhead for large immutable history snapshots.
-
-## Storage Safety
-
-- Existing history files remain fully compatible and no records are removed during migration.
-- Writes still perform Brotli round-trip validation, preserve the previous backup, and atomically replace the active store.
-- On the reported 937-item store, compressed size increases by approximately 11% in exchange for reducing compression from about 25.1 seconds to about 150 milliseconds.
+- Replaced sequential legacy keyboard events with one atomic User32 `SendInput` transaction so paste-after-copy cannot degrade into a lone `v`.
+- Compact image history now uses thumbnail-sized previews and keeps the history list dense.
+- Changing interface mode updates both the renderer layout and native window geometry immediately.
 
 ## Verification
 
-- Source integrity, TypeScript, renderer production build, Cargo lock, and large-payload Brotli round-trip coverage.
-- GitHub-hosted Tauri compilation, NSIS packaging, native Alt+V startup, and real focused-textbox paste-after-copy testing.
+- Renderer updater utility tests, source integrity, TypeScript, and production renderer build.
+- Rust tests for panel positioning and native Windows input structure layout.
+- GitHub-hosted Tauri compilation, signed updater artifact generation, NSIS packaging, native Alt+V activation, and exact focused-textbox paste verification.
 
 ## Downloads
 
-- LightClip_*_setup.exe: recommended current-user installer.
-- lightclip.exe: standalone application binary.
+- `LightClip_*_setup.exe`: recommended current-user installer and online-update target.
+- `LightClip-portable-x64.exe`: standalone application binary.
 
-Quit the existing LightClip tray process before replacing a standalone executable. Release binaries remain unsigned, so Windows SmartScreen or third-party antivirus products may show an unknown-publisher warning.
+Updater artifacts are signed with the Tauri updater key. Windows executables are not Authenticode-signed, so SmartScreen or third-party antivirus products may still show an unknown-publisher warning.

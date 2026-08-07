@@ -11,6 +11,11 @@ export type AppThemeAccent = 'mint' | 'blue' | 'violet' | 'rose' | 'amber'
 export type AppThemeMode = 'system' | 'light' | 'dark'
 
 /**
+ * Window layouts supported by LightClip's clipboard panel.
+ */
+export type AppInterfaceMode = 'standard' | 'compact'
+
+/**
  * On-disk persistence encoding used for clipboard history.
  */
 export type StorageCompression = 'safeStorageBrotli' | 'brotli' | 'none'
@@ -106,6 +111,8 @@ export interface AppSettings {
   themeAccent: AppThemeAccent
   /** Light/dark appearance preference used by the renderer theme system. */
   themeMode: AppThemeMode
+  /** Density and window geometry used when displaying the clipboard panel. */
+  interfaceMode: AppInterfaceMode
 }
 
 /**
