@@ -5,6 +5,7 @@ import { brotliCompress, brotliDecompress, constants as zlibConstants } from 'no
 import { promisify } from 'node:util'
 import { app, safeStorage } from 'electron'
 import type {
+  AppInterfaceMode,
   AppSettings,
   AppState,
   AppThemeAccent,
@@ -31,6 +32,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_TEMPORARY_PAUSE_MS = DAY_MS
 const themeAccents: readonly AppThemeAccent[] = ['mint', 'blue', 'violet', 'rose', 'amber']
 const themeModes: readonly AppThemeMode[] = ['system', 'light', 'dark']
+const interfaceModes: readonly AppInterfaceMode[] = ['standard', 'compact']
 
 interface PersistedStore {
   version: number
@@ -69,6 +71,7 @@ const defaultSettings: AppSettings = {
   globalShortcut: 'Alt+V',
   themeAccent: 'mint',
   themeMode: 'system',
+  interfaceMode: 'standard',
   sensitiveContentProtection: false,
   sensitiveKeywords: [],
   maxStorageBytes: 256 * 1024 * 1024,
@@ -785,6 +788,7 @@ function normalizeSettings(settings: AppSettings): AppSettings {
         : defaultSettings.globalShortcut,
     themeAccent: normalizeThemeAccent(settings.themeAccent),
     themeMode: normalizeThemeMode(settings.themeMode),
+    interfaceMode: normalizeInterfaceMode(settings.interfaceMode),
     sensitiveContentProtection: Boolean(settings.sensitiveContentProtection),
     sensitiveKeywords: Array.isArray(settings.sensitiveKeywords)
       ? settings.sensitiveKeywords.filter((value): value is string => typeof value === 'string').slice(0, 100)
@@ -825,6 +829,13 @@ function normalizeThemeAccent(value: unknown): AppThemeAccent {
   return typeof value === 'string' && themeAccents.includes(value as AppThemeAccent)
     ? (value as AppThemeAccent)
     : defaultSettings.themeAccent
+}
+
+/** Normalizes persisted panel layout values from current and legacy stores. */
+function normalizeInterfaceMode(value: unknown): AppInterfaceMode {
+  return typeof value === 'string' && interfaceModes.includes(value as AppInterfaceMode)
+    ? (value as AppInterfaceMode)
+    : defaultSettings.interfaceMode
 }
 
 function normalizeThemeMode(value: unknown): AppThemeMode {

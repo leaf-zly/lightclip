@@ -17,7 +17,7 @@ use std::{
 use tauri::{
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  AppHandle, Emitter, Manager, State, WindowEvent,
+  AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
@@ -45,11 +45,60 @@ type WindowHandle = *mut c_void;
 
 #[cfg(windows)]
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct NativeRect {
   left: i32,
   top: i32,
   right: i32,
   bottom: i32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct NativeMonitorInfo {
+  size: u32,
+  monitor: NativeRect,
+  work: NativeRect,
+  flags: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NativeMouseInput {
+  x: i32,
+  y: i32,
+  mouse_data: u32,
+  flags: u32,
+  time: u32,
+  extra_info: usize,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NativeKeyboardInput {
+  virtual_key: u16,
+  scan_code: u16,
+  flags: u32,
+  time: u32,
+  extra_info: usize,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+union NativeInputData {
+  mouse: NativeMouseInput,
+  keyboard: NativeKeyboardInput,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NativeInput {
+  input_type: u32,
+  data: NativeInputData,
 }
 
 #[cfg(windows)]
@@ -79,7 +128,10 @@ extern "system" {
   fn BringWindowToTop(window: WindowHandle) -> i32;
   fn SetFocus(window: WindowHandle) -> WindowHandle;
   fn AttachThreadInput(attach_thread: u32, attach_to_thread: u32, attach: i32) -> i32;
-  fn keybd_event(virtual_key: u8, scan_code: u8, flags: u32, extra_info: usize);
+  fn MonitorFromWindow(window: WindowHandle, flags: u32) -> WindowHandle;
+  fn GetMonitorInfoW(monitor: WindowHandle, info: *mut NativeMonitorInfo) -> i32;
+  fn GetDpiForWindow(window: WindowHandle) -> u32;
+  fn SendInput(input_count: u32, inputs: *const NativeInput, input_size: i32) -> u32;
 }
 
 #[cfg(windows)]
@@ -91,9 +143,13 @@ extern "system" {
 #[cfg(windows)]
 const SW_RESTORE: i32 = 9;
 #[cfg(windows)]
-const VK_CONTROL: u8 = 0x11;
+const MONITOR_DEFAULT_TO_NEAREST: u32 = 2;
 #[cfg(windows)]
-const VK_V: u8 = 0x56;
+const INPUT_KEYBOARD: u32 = 1;
+#[cfg(windows)]
+const VK_CONTROL: u16 = 0x11;
+#[cfg(windows)]
+const VK_V: u16 = 0x56;
 #[cfg(windows)]
 const KEYEVENTF_KEYUP: u32 = 0x0002;
 
@@ -135,6 +191,7 @@ struct AppSettings {
   global_shortcut: String,
   theme_accent: String,
   theme_mode: String,
+  interface_mode: String,
   sensitive_content_protection: bool,
   sensitive_keywords: Vec<String>,
   max_storage_bytes: u64,
@@ -305,6 +362,8 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_global_shortcut::Builder::new().build())
     .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_process::init())
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_log::Builder::default().build())
     .setup(|app| {
       let mut store = ClipboardStore::new(default_storage_directory())?;
@@ -613,10 +672,11 @@ fn optimize_storage(app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandRe
 
 #[tauri::command]
 fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<AppSettings> {
-  let (result, previous_shortcut) = {
+  let (result, previous_shortcut, previous_interface_mode) = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
     let previous_shortcut = store.state.settings.global_shortcut.clone();
-    (store.update_settings(settings), previous_shortcut)
+    let previous_interface_mode = store.state.settings.interface_mode.clone();
+    (store.update_settings(settings), previous_shortcut, previous_interface_mode)
   };
   match result {
     Ok(settings) => {
@@ -634,6 +694,12 @@ fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_
         }
       }
       apply_launch_at_login(settings.launch_at_login);
+      if settings.interface_mode != previous_interface_mode {
+        if let Some(window) = app.get_webview_window("main") {
+          let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
+          let _ = configure_panel_window(&window, target.as_deref(), &settings.interface_mode);
+        }
+      }
       broadcast_state(&app, &runtime);
       ok(settings)
     }
@@ -732,6 +798,7 @@ struct AppSettingsPatch {
   global_shortcut: Option<String>,
   theme_accent: Option<String>,
   theme_mode: Option<String>,
+  interface_mode: Option<String>,
   sensitive_content_protection: Option<bool>,
   sensitive_keywords: Option<Vec<String>>,
   max_storage_bytes: Option<u64>,
@@ -1073,6 +1140,9 @@ impl ClipboardStore {
     }
     if let Some(value) = patch.theme_mode {
       self.state.settings.theme_mode = value;
+    }
+    if let Some(value) = patch.interface_mode {
+      self.state.settings.interface_mode = value;
     }
     if let Some(value) = patch.sensitive_content_protection {
       self.state.settings.sensitive_content_protection = value;
@@ -1444,16 +1514,91 @@ fn start_clipboard_watcher(app: AppHandle, runtime: AppRuntime) {
 }
 
 fn show_panel(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()> {
-  if let Ok(target) = capture_paste_target() {
+  let target = capture_paste_target().ok();
+  if let Some(target_value) = target.as_ref() {
     if let Ok(mut paste_target) = runtime.paste_target.lock() {
-      *paste_target = Some(target);
+      *paste_target = Some(target_value.clone());
     }
   }
   let Some(window) = app.get_webview_window("main") else {
     return Ok(());
   };
+  let interface_mode = runtime
+    .store
+    .lock()
+    .map(|store| store.state.settings.interface_mode.clone())
+    .unwrap_or_else(|_| "standard".to_string());
+  configure_panel_window(&window, target.as_deref(), &interface_mode)?;
   window.show()?;
   window.set_focus()?;
+  Ok(())
+}
+
+#[derive(Debug, PartialEq)]
+struct PanelBounds {
+  x: i32,
+  y: i32,
+  width: u32,
+  height: u32,
+}
+
+/// Computes DPI-scaled panel geometry constrained to the target monitor work area.
+fn calculate_panel_bounds(work: NativeRect, dpi: u32, interface_mode: &str) -> PanelBounds {
+  let scale = (dpi.max(96) as f64) / 96.0;
+  let (logical_width, logical_height) = if interface_mode == "compact" { (390.0, 560.0) } else { (860.0, 680.0) };
+  let work_width = (work.right - work.left).max(1) as u32;
+  let work_height = (work.bottom - work.top).max(1) as u32;
+  let width = ((logical_width * scale).round() as u32).min(work_width);
+  let height = ((logical_height * scale).round() as u32).min(work_height);
+  let (x, y) = if interface_mode == "compact" {
+    let margin = (20.0 * scale).round() as i32;
+    (
+      (work.right - width as i32 - margin).max(work.left),
+      (work.bottom - height as i32 - margin).max(work.top),
+    )
+  } else {
+    (
+      work.left + (work_width.saturating_sub(width) / 2) as i32,
+      work.top + (work_height.saturating_sub(height) / 2) as i32,
+    )
+  };
+  PanelBounds { x, y, width, height }
+}
+
+/// Applies the persisted panel layout on the monitor nearest the captured foreground window.
+fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interface_mode: &str) -> anyhow::Result<()> {
+  #[cfg(windows)]
+  {
+    let target_window = target
+      .and_then(|value| parse_paste_target(value).ok())
+      .map(|(window, _)| window as WindowHandle)
+      .filter(|window| unsafe { IsWindow(*window) } != 0)
+      .unwrap_or_else(|| unsafe { GetForegroundWindow() });
+    let monitor = unsafe { MonitorFromWindow(target_window, MONITOR_DEFAULT_TO_NEAREST) };
+    if monitor.is_null() {
+      anyhow::bail!("未找到目标显示器");
+    }
+    let mut monitor_info = NativeMonitorInfo {
+      size: std::mem::size_of::<NativeMonitorInfo>() as u32,
+      monitor: NativeRect { left: 0, top: 0, right: 0, bottom: 0 },
+      work: NativeRect { left: 0, top: 0, right: 0, bottom: 0 },
+      flags: 0,
+    };
+    if unsafe { GetMonitorInfoW(monitor, &mut monitor_info) } == 0 {
+      anyhow::bail!("读取目标显示器信息失败");
+    }
+    let dpi = unsafe { GetDpiForWindow(target_window) };
+    let bounds = calculate_panel_bounds(monitor_info.work, dpi, interface_mode);
+    let minimum = if interface_mode == "compact" {
+      PhysicalSize::new(340, 420)
+    } else {
+      PhysicalSize::new(720, 520)
+    };
+    let _ = window.unmaximize();
+    window.set_min_size(Some(minimum))?;
+    window.set_size(PhysicalSize::new(bounds.width, bounds.height))?;
+    window.set_position(PhysicalPosition::new(bounds.x, bounds.y))?;
+  }
   Ok(())
 }
 
@@ -1722,7 +1867,7 @@ fn paste_to_target(target: &str) -> anyhow::Result<()> {
         }
         thread::sleep(Duration::from_millis(16));
         if unsafe { GetForegroundWindow() } == window {
-          unsafe { send_ctrl_v() };
+          send_ctrl_v()?;
           return Ok(());
         }
       }
@@ -1755,13 +1900,32 @@ fn parse_paste_target(target: &str) -> anyhow::Result<(isize, isize)> {
 }
 
 #[cfg(windows)]
-unsafe fn send_ctrl_v() {
-  unsafe {
-    keybd_event(VK_CONTROL, 0, 0, 0);
-    keybd_event(VK_V, 0, 0, 0);
-    keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+fn send_ctrl_v() -> anyhow::Result<()> {
+  let keyboard_input = |virtual_key: u16, flags: u32| NativeInput {
+    input_type: INPUT_KEYBOARD,
+    data: NativeInputData {
+      keyboard: NativeKeyboardInput {
+        virtual_key,
+        scan_code: 0,
+        flags,
+        time: 0,
+        extra_info: 0,
+      },
+    },
+  };
+  // Send the modifier and key as one transaction so focus restoration cannot
+  // drop Ctrl while still delivering the V key to the target input control.
+  let inputs = [
+    keyboard_input(VK_CONTROL, 0),
+    keyboard_input(VK_V, 0),
+    keyboard_input(VK_V, KEYEVENTF_KEYUP),
+    keyboard_input(VK_CONTROL, KEYEVENTF_KEYUP),
+  ];
+  let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<NativeInput>() as i32) };
+  if sent != inputs.len() as u32 {
+    anyhow::bail!("Windows 仅发送了 {sent}/{} 个粘贴按键事件", inputs.len());
   }
+  Ok(())
 }
 
 fn run_powershell(script: &str) -> anyhow::Result<String> {
@@ -2007,6 +2171,7 @@ fn default_settings() -> AppSettings {
     global_shortcut: "Alt+V".to_string(),
     theme_accent: "mint".to_string(),
     theme_mode: "system".to_string(),
+    interface_mode: "standard".to_string(),
     sensitive_content_protection: false,
     sensitive_keywords: Vec::new(),
     max_storage_bytes: 256 * 1024 * 1024,
@@ -2047,6 +2212,9 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
   }
   if !["system", "light", "dark"].contains(&settings.theme_mode.as_str()) {
     settings.theme_mode = "system".to_string();
+  }
+  if !["standard", "compact"].contains(&settings.interface_mode.as_str()) {
+    settings.interface_mode = "standard".to_string();
   }
   settings
 }
@@ -2437,6 +2605,28 @@ mod tests {
         ]
       );
     }
+  }
+
+  #[test]
+  fn compact_panel_uses_target_monitor_work_area_and_dpi() {
+    let bounds = calculate_panel_bounds(
+      NativeRect {
+        left: 1920,
+        top: 0,
+        right: 4480,
+        bottom: 1400,
+      },
+      144,
+      "compact",
+    );
+    assert_eq!(bounds, PanelBounds { x: 3865, y: 530, width: 585, height: 840 });
+  }
+
+  #[cfg(windows)]
+  #[test]
+  fn native_input_layout_matches_user32_contract() {
+    let expected_size = if std::mem::size_of::<usize>() == 8 { 40 } else { 28 };
+    assert_eq!(std::mem::size_of::<NativeInput>(), expected_size);
   }
 
   #[cfg(windows)]

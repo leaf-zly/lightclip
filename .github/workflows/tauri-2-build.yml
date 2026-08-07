@@ -46,6 +46,9 @@ jobs:
       - name: Typecheck Sources
         run: pnpm typecheck
 
+      - name: Test Renderer
+        run: pnpm test
+
       - name: Build Renderer
         run: pnpm build:renderer
 
@@ -55,12 +58,68 @@ jobs:
       - name: Test Tauri Host
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-      - name: Package Tauri App
-        run: pnpm tauri:build
+      - name: Verify Updater Signing Key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw 'TAURI_SIGNING_PRIVATE_KEY is required to create signed update artifacts.'
+          }
 
-      - name: Smoke Test Packaged Shortcut
+      - name: Read Release Notes
+        id: release_notes
+        if: startsWith(github.ref, 'refs/tags/v2.')
+        shell: pwsh
+        run: |
+          $body = Get-Content -LiteralPath 'RELEASE_NOTES.md' -Raw -Encoding utf8
+          if ([string]::IsNullOrWhiteSpace($body)) {
+            throw 'RELEASE_NOTES.md must not be empty.'
+          }
+          $delimiter = "RELEASE_NOTES_$([Guid]::NewGuid().ToString('N'))"
+          "body<<$delimiter" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $body.Trim() | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $delimiter | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Package Tauri App
+        if: ${{ !startsWith(github.ref, 'refs/tags/v2.') }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: pnpm tauri:build -- --ci
+
+      - name: Build Signed Draft Release
+        if: startsWith(github.ref, 'refs/tags/v2.')
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: LightClip ${{ github.ref_name }}
+          releaseBody: ${{ steps.release_notes.outputs.body }}
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --ci
+
+      - name: Smoke Test Packaged Shortcut And Paste
         shell: pwsh
         run: ./scripts/test-packaged-shortcut.ps1 -ExecutablePath 'src-tauri/target/release/lightclip.exe'
+
+      - name: Upload Portable Executable
+        if: startsWith(github.ref, 'refs/tags/v2.')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "src-tauri/target/release/lightclip.exe#LightClip-portable-x64.exe" --clobber
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v2.')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false
 
       - name: Upload Dependency Lock
         uses: actions/upload-artifact@v7
@@ -76,13 +135,6 @@ jobs:
           path: |
             src-tauri/target/release/lightclip.exe
             src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: error
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v2.')
-        uses: softprops/action-gh-release@v3
-        with:
-          body_path: RELEASE_NOTES.md
-          files: |
-            src-tauri/target/release/lightclip.exe
-            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/nsis/*.zip
+          if-no-files-found: warn

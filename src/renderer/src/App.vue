@@ -11,6 +11,7 @@ import {
   FileStack,
   FolderOpen,
   Image,
+  LayoutList,
   ListFilter,
   Minus,
   Moon,
@@ -34,6 +35,7 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import appIconUrl from '../../../resources/lightclip-icon.svg?url'
 import type {
+  AppInterfaceMode,
   AppSettings,
   AppState,
   AppThemeAccent,
@@ -42,6 +44,7 @@ import type {
   ClipboardItemKind,
   HistoryItemUpsert,
 } from '../../shared/types'
+import AppUpdater from './components/AppUpdater.vue'
 import { getLightClipApi } from './runtime'
 import { createItemTitle, describeItem, formatBytes, formatRelativeTime } from './utils'
 import { matchesAdvancedQuery, matchesTimeFilter, type HistoryTimeFilter } from './search'
@@ -68,9 +71,15 @@ interface ThemeModeOption {
   label: string
 }
 
-/**
- * History filters available in the list toolbar.
- */
+/** Panel density option displayed in settings. */
+interface InterfaceModeOption {
+  /** Persisted layout identifier. */
+  id: AppInterfaceMode
+  /** Human-readable option label. */
+  label: string
+}
+
+/** History filter displayed in the list toolbar. */
 interface HistoryFilterOption {
   /** Stable filter id used by renderer state. */
   id: 'all' | 'pinned' | ClipboardItemKind
@@ -94,6 +103,10 @@ const themeModes: readonly ThemeModeOption[] = [
   { id: 'system', label: '跟随系统' },
   { id: 'light', label: '浅色' },
   { id: 'dark', label: '暗黑' },
+]
+const interfaceModes: readonly InterfaceModeOption[] = [
+  { id: 'standard', label: '标准' },
+  { id: 'compact', label: '简略' },
 ]
 const historyFilters: readonly HistoryFilterOption[] = [
   { id: 'all', label: '全部' },
@@ -129,6 +142,7 @@ const state = shallowRef<AppState>({
     globalShortcut: DEFAULT_SHORTCUT,
     themeAccent: 'mint',
     themeMode: 'system',
+    interfaceMode: 'standard',
     sensitiveContentProtection: false,
     sensitiveKeywords: [],
     maxStorageBytes: 256 * 1024 * 1024,
@@ -210,10 +224,14 @@ const storageCompressionLabel = computed(() => {
   return state.value.storageCompression === 'brotli' ? 'Brotli 压缩' : '未压缩'
 })
 const storagePathLabel = computed(() => state.value.storageFilePath || '默认数据目录')
+const quickInterfaceLabel = computed(() =>
+  state.value.settings.interfaceMode === 'compact' ? '切换标准模式' : '切换简略模式',
+)
 const quickThemeLabel = computed(() => (state.value.settings.themeMode === 'dark' ? '切换浅色' : '切换暗黑'))
 const shellClasses = computed(() => [
   `theme-${state.value.settings.themeAccent}`,
   `mode-${state.value.settings.themeMode}`,
+  `interface-${state.value.settings.interfaceMode}`,
 ])
 
 /**
@@ -414,6 +432,12 @@ async function resetShortcut(): Promise<void> {
   showToast('已重置快捷键')
 }
 
+/** Switches between standard and compact panel layouts without reopening the app. */
+async function toggleInterfaceMode(): Promise<void> {
+  const interfaceMode: AppInterfaceMode = state.value.settings.interfaceMode === 'compact' ? 'standard' : 'compact'
+  await updateSettings({ interfaceMode })
+}
+
 async function toggleThemeMode(): Promise<void> {
   const nextMode: AppThemeMode = state.value.settings.themeMode === 'dark' ? 'light' : 'dark'
   await updateSettings({ themeMode: nextMode })
@@ -436,7 +460,7 @@ async function closeWindow(): Promise<void> {
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
-  const shouldApplyOptimisticTheme = isThemeSettingsUpdate(settings)
+  const shouldApplyOptimisticTheme = isVisualSettingsUpdate(settings)
   if (shouldApplyOptimisticTheme) {
     // Theme changes should repaint immediately; the main process still persists and broadcasts the canonical state.
     state.value = {
@@ -455,8 +479,9 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
   }
 }
 
-function isThemeSettingsUpdate(settings: Partial<AppSettings>): boolean {
-  return Boolean(settings.themeAccent || settings.themeMode)
+/** Returns whether a settings patch can be reflected locally before native persistence completes. */
+function isVisualSettingsUpdate(settings: Partial<AppSettings>): boolean {
+  return Boolean(settings.themeAccent || settings.themeMode || settings.interfaceMode)
 }
 
 function moveSelection(delta: number): void {
@@ -614,7 +639,7 @@ function handleKeyboard(event: KeyboardEvent): void {
         <button type="button" title="最小化" @click="minimizeWindow">
           <Minus :size="14" />
         </button>
-        <button type="button" title="最大化/还原" @click="toggleMaximizeWindow">
+        <button class="maximize-control" type="button" title="最大化/还原" @click="toggleMaximizeWindow">
           <Square :size="12" />
         </button>
         <button class="close" type="button" title="关闭到托盘" @click="closeWindow">
@@ -644,17 +669,21 @@ function handleKeyboard(event: KeyboardEvent): void {
             <Pause v-if="state.settings.captureEnabled" :size="18" />
             <Play v-else :size="18" />
           </button>
-          <button class="icon-button" type="button" title="临时暂停 15 分钟" @click="pauseCapture()">
+          <button class="icon-button secondary-action" type="button" title="临时暂停 15 分钟" @click="pauseCapture()">
             <TimerReset :size="18" />
+          </button>
+          <button class="icon-button" type="button" :title="quickInterfaceLabel" @click="toggleInterfaceMode">
+            <LayoutList :size="18" />
           </button>
           <button class="icon-button" type="button" :title="quickThemeLabel" @click="toggleThemeMode">
             <Sun v-if="state.settings.themeMode === 'dark'" :size="18" />
             <Moon v-else :size="18" />
           </button>
+          <AppUpdater />
           <button class="icon-button" type="button" title="设置" @click="showSettings = !showSettings">
             <Settings :size="18" />
           </button>
-          <button class="icon-button danger" type="button" title="退出 LightClip" @click="quitApp">
+          <button class="icon-button danger secondary-action" type="button" title="退出 LightClip" @click="quitApp">
             <Power :size="18" />
           </button>
         </div>
@@ -701,6 +730,27 @@ function handleKeyboard(event: KeyboardEvent): void {
       </div>
 
       <section v-if="showSettings" class="settings-pane settings-pane-expanded" aria-label="设置">
+        <div class="setting-row mode-setting">
+          <div>
+            <strong>界面模式</strong>
+            <span>标准面板或类似 Win+V 的紧凑面板</span>
+          </div>
+          <div class="segmented-control" role="radiogroup" aria-label="界面模式">
+            <button
+              v-for="mode in interfaceModes"
+              :key="mode.id"
+              class="segment-button"
+              :class="{ selected: state.settings.interfaceMode === mode.id }"
+              type="button"
+              role="radio"
+              :aria-checked="state.settings.interfaceMode === mode.id"
+              @click="updateSettings({ interfaceMode: mode.id })"
+            >
+              {{ mode.label }}
+            </button>
+          </div>
+        </div>
+
         <div class="setting-row mode-setting">
           <div>
             <strong>外观</strong>

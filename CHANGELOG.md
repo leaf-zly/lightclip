@@ -6,6 +6,24 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.2.0] - 2026-08-07
+
+### Added
+
+- Added signed in-app updates from GitHub Releases with release notes, progress, verification, installation, and relaunch.
+- Added standard and compact Win+V-inspired interface modes with persisted native window geometry.
+- Added DPI-aware placement on the monitor containing the foreground target window.
+
+### Fixed
+
+- Replaced sequential legacy keyboard events with one atomic User32 `SendInput` transaction, preventing paste-after-copy from inserting only `v`.
+- Keeps compact image previews and history controls within the smaller panel layout.
+
+### Verified
+
+- Added updater utility, panel geometry, and native input ABI tests.
+- Release publication remains gated by packaged Alt+V and exact focused-textbox paste verification on GitHub-hosted Windows runners.
+
 ## [2.1.2] - 2026-08-06
 
 ### Fixed
@@ -373,6 +391,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.2.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.2.0
 [2.1.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.2
 [2.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.1
 [2.1.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.0

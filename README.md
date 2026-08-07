@@ -2,9 +2,9 @@
 
 LightClip is a lightweight, local-first clipboard history app for Windows. Version 2 uses Tauri 2, Vue 3, TypeScript, and the system WebView2 runtime, replacing the bundled Electron runtime used by LightClip 1.x.
 
-Clipboard data stays on your machine. LightClip does not include telemetry, cloud sync, or a background network service. The only network request is a manual update check against GitHub Releases.
+Clipboard data stays on your machine. LightClip does not include telemetry, cloud sync, or a background network service. Network access is limited to signed update checks and downloads from GitHub Releases.
 
-> Current version: `v2.1.2`. Windows packages are built by GitHub Actions and published through GitHub Releases.
+> Current version: `v2.2.0`. Windows packages are built by GitHub Actions and published through GitHub Releases.
 
 ## Features
 
@@ -17,12 +17,12 @@ Clipboard data stays on your machine. LightClip does not include telemetry, clou
 - Optional local sensitive-content filtering for credentials, verification codes, payment-card numbers, and custom keywords.
 - Configurable storage budget and on-demand deduplication that always protects pinned snippets.
 - Per-app privacy exclusions for password managers and other sensitive tools.
-- Optional paste-after-select behavior that returns input to the previous foreground window.
+- Optional paste-after-select behavior that returns input to the previous focused control with an atomic Windows input transaction.
 - Configurable history limits, retention, image size, and file-count limits.
 - Import and export through portable JSON backups.
-- System, light, and dark appearance modes with five full-app accent themes.
+- Standard and compact Win+V-inspired panel layouts, plus system, light, and dark appearance modes with five full-app accent themes.
 - Tray operation, current-user startup registration, and a configurable global shortcut.
-- Manual update checks against GitHub Releases.
+- Signed online updates from GitHub Releases with progress, release notes, installation, and relaunch.
 
 Image and file capture are disabled by default because those clipboard formats can contain sensitive or high-volume data.
 
@@ -64,10 +64,11 @@ Closing the panel hides it to the tray. Left-click the tray icon to reopen it; r
 | Sensitive-content protection | Off | Locally skips likely credentials, codes, card numbers, and custom keywords. |
 | Automatic backups | On | Creates a rolling backup every 24 hours and keeps seven copies by default. |
 | Storage limit | `256 MB` | Removes only the oldest non-pinned records when the approximate payload exceeds the limit. |
-| Paste after copy | Off | Restores the previous target and sends `Ctrl + V`. |
+| Paste after copy | Off | Restores the previous focused control and sends an atomic `Ctrl + V` input sequence. |
 | History limit | `300` | Applies to non-pinned records. |
 | Retention | Forever | Optional age-based cleanup for non-pinned records. |
 | Global shortcut | `Alt + V` | Re-registers after the setting changes. |
+| Interface mode | Standard | Compact mode uses a smaller Win+V-inspired panel on the target monitor. |
 | Appearance | System | Supports system, light, and dark modes. |
 | Accent | Mint | Mint, Blue, Violet, Rose, or Amber across the full interface. |
 | Storage location | `%APPDATA%\LightClip` | Can be moved from Settings. |
