@@ -112,7 +112,9 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.ref_name }}" "src-tauri/target/release/lightclip.exe#LightClip-portable-x64.exe" --clobber
+        run: |
+          Copy-Item -LiteralPath "src-tauri/target/release/lightclip.exe" -Destination "LightClip-portable-x64.exe"
+          gh release upload "${{ github.ref_name }}" "LightClip-portable-x64.exe" --clobber
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v2.')
