@@ -6,9 +6,13 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    name: Typecheck And Build
+  frontend:
+    name: Frontend Quality
     runs-on: windows-latest
 
     steps:
@@ -37,3 +41,44 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  native:
+    name: Native Windows Tests
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust Release Build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: lightclip-windows-release
+          cache-on-failure: true
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Renderer For Native Tests
+        run: pnpm build:renderer
+
+      - name: Verify Dependency Lock
+        run: cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml | Out-Null
+
+      - name: Test Tauri Host In Release Profile
+        run: cargo test --release --locked --lib --manifest-path src-tauri/Cargo.toml

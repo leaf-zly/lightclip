@@ -38,7 +38,7 @@ Open the failed `Tauri 2 Build` run and inspect the first failing step. Dependen
 Do not upload a locally built binary as an official replacement. Fix the source or workflow and rerun:
 
 ```powershell
-gh workflow run tauri-2-build.yml --ref codex/tauri-2.0
+gh workflow run tauri-2-build.yml --ref main
 ```
 
 ## Shortcut Does Not Open LightClip

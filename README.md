@@ -124,10 +124,10 @@ pnpm tauri:dev
 
 ### Packaging
 
-Official Windows packages are built by [Tauri 2 Build](.github/workflows/tauri-2-build.yml). Pushes to `codex/tauri-2.0` upload a workflow artifact; a `v2.*` tag also publishes the assets to GitHub Releases.
+Official Windows packages are built by [Tauri 2 Build](.github/workflows/tauri-2-build.yml). Pull requests and `main` pushes run frontend and native Release-profile tests in parallel without producing binaries. A manual workflow dispatch uploads an auditable Windows artifact, while a `v2.*` tag publishes signed updater assets to GitHub Releases.
 
 ```powershell
-gh workflow run tauri-2-build.yml --ref codex/tauri-2.0
+gh workflow run tauri-2-build.yml --ref main
 ```
 
 `pnpm dist` remains available for trusted local Tauri packaging, but local native builds can attract heuristic antivirus scanning. Maintainers should use the GitHub workflow for official artifacts.
