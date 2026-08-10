@@ -199,11 +199,16 @@ try {
   Write-Host "Packaged Alt+V opened LightClip in $($stopwatch.ElapsedMilliseconds) ms."
 
   # Visibility can precede the first WebView render on a cold CI machine.
-  Start-Sleep -Milliseconds 150
-  [LightClipShortcutProbe]::SendEnter()
-  $pasteDeadline = [DateTime]::UtcNow.AddSeconds(3)
+  # Retry Enter only while the panel remains visible; a handled copy hides it,
+  # so any later timeout still represents a real focus or paste failure.
+  $pasteDeadline = [DateTime]::UtcNow.AddSeconds(5)
+  $nextEnterAt = [DateTime]::UtcNow
   while ($textBox.Text -ne $expectedText -and [DateTime]::UtcNow -lt $pasteDeadline) {
     [System.Windows.Forms.Application]::DoEvents()
+    if ([LightClipShortcutProbe]::IsWindowVisible($window) -and [DateTime]::UtcNow -ge $nextEnterAt) {
+      [LightClipShortcutProbe]::SendEnter()
+      $nextEnterAt = [DateTime]::UtcNow.AddMilliseconds(250)
+    }
     Start-Sleep -Milliseconds 25
   }
   if ($textBox.Text -ne $expectedText) {
