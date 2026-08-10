@@ -16,7 +16,7 @@ describe('calculateDownloadPercent', () => {
 
 describe('describeUpdaterError', () => {
   it('uses error messages and provides a stable fallback', () => {
-    expect(describeUpdaterError(new Error('network unavailable'))).toBe('network unavailable')
+    expect(describeUpdaterError(new Error('network unavailable'))).toBe('暂时无法连接更新服务，请检查网络后重试，或使用浏览器下载。')
     expect(describeUpdaterError(null)).toBe('更新服务暂时不可用，请稍后重试')
   })
 })

@@ -43,9 +43,8 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 #[cfg(windows)]
 type WindowHandle = *mut c_void;
 
-#[cfg(windows)]
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct NativeRect {
   left: i32,
   top: i32,
@@ -132,6 +131,15 @@ extern "system" {
   fn GetMonitorInfoW(monitor: WindowHandle, info: *mut NativeMonitorInfo) -> i32;
   fn GetDpiForWindow(window: WindowHandle) -> u32;
   fn SendInput(input_count: u32, inputs: *const NativeInput, input_size: i32) -> u32;
+  fn SendMessageTimeoutW(
+    window: WindowHandle,
+    message: u32,
+    w_param: usize,
+    l_param: isize,
+    flags: u32,
+    timeout: u32,
+    result: *mut usize,
+  ) -> usize;
 }
 
 #[cfg(windows)]
@@ -152,6 +160,10 @@ const VK_CONTROL: u16 = 0x11;
 const VK_V: u16 = 0x56;
 #[cfg(windows)]
 const KEYEVENTF_KEYUP: u32 = 0x0002;
+#[cfg(windows)]
+const WM_PASTE: u32 = 0x0302;
+#[cfg(windows)]
+const SMTO_ABORTIFHUNG: u32 = 0x0002;
 
 #[derive(Clone)]
 struct AppRuntime {
@@ -520,7 +532,9 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
     let target = runtime.paste_target.lock().ok().and_then(|mut value| value.take());
     if let Some(target) = target {
       thread::spawn(move || {
-        let _ = paste_to_target(&target);
+        if let Err(error) = paste_to_target(&target) {
+          eprintln!("LightClip automatic paste failed: {error:#}");
+        }
       });
     }
   }
@@ -697,7 +711,15 @@ fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_
       if settings.interface_mode != previous_interface_mode {
         if let Some(window) = app.get_webview_window("main") {
           let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
+          let was_visible = window.is_visible().unwrap_or(false);
+          if was_visible {
+            let _ = window.hide();
+          }
           let _ = configure_panel_window(&window, target.as_deref(), &settings.interface_mode);
+          if was_visible {
+            let _ = window.show();
+            let _ = window.set_focus();
+          }
         }
       }
       broadcast_state(&app, &runtime);
@@ -1544,17 +1566,62 @@ struct PanelBounds {
 
 /// Computes DPI-scaled panel geometry constrained to the target monitor work area.
 fn calculate_panel_bounds(work: NativeRect, dpi: u32, interface_mode: &str) -> PanelBounds {
+  calculate_panel_bounds_near_caret(work, dpi, interface_mode, None)
+}
+
+/// Positions the panel beside the focused caret while keeping it inside the monitor work area.
+fn calculate_panel_bounds_near_caret(
+  work: NativeRect,
+  dpi: u32,
+  interface_mode: &str,
+  caret: Option<NativeRect>,
+) -> PanelBounds {
   let scale = (dpi.max(96) as f64) / 96.0;
   let (logical_width, logical_height) = if interface_mode == "compact" { (390.0, 560.0) } else { (860.0, 680.0) };
   let work_width = (work.right - work.left).max(1) as u32;
   let work_height = (work.bottom - work.top).max(1) as u32;
   let width = ((logical_width * scale).round() as u32).min(work_width);
   let height = ((logical_height * scale).round() as u32).min(work_height);
+  let margin = (12.0 * scale).round() as i32;
+  let fallback_margin = if interface_mode == "compact" {
+    (20.0 * scale).round() as i32
+  } else {
+    0
+  };
+
+  if let Some(caret) = caret.filter(|rect| {
+    rect.right >= rect.left
+      && rect.bottom >= rect.top
+      && rect.left >= work.left
+      && rect.left < work.right
+      && rect.top >= work.top
+      && rect.top < work.bottom
+  }) {
+    let right_x = caret.right + margin;
+    let left_x = caret.left - width as i32 - margin;
+    let x = if right_x + width as i32 <= work.right {
+      right_x
+    } else if left_x >= work.left {
+      left_x
+    } else {
+      right_x.clamp(work.left, work.right - width as i32)
+    };
+    let below_y = caret.bottom + margin;
+    let above_y = caret.top - height as i32 - margin;
+    let y = if below_y + height as i32 <= work.bottom {
+      below_y
+    } else if above_y >= work.top {
+      above_y
+    } else {
+      caret.top.clamp(work.top, work.bottom - height as i32)
+    };
+    return PanelBounds { x, y, width, height };
+  }
+
   let (x, y) = if interface_mode == "compact" {
-    let margin = (20.0 * scale).round() as i32;
     (
-      (work.right - width as i32 - margin).max(work.left),
-      (work.bottom - height as i32 - margin).max(work.top),
+      (work.right - width as i32 - fallback_margin).max(work.left),
+      (work.bottom - height as i32 - fallback_margin).max(work.top),
     )
   } else {
     (
@@ -1569,9 +1636,10 @@ fn calculate_panel_bounds(work: NativeRect, dpi: u32, interface_mode: &str) -> P
 fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interface_mode: &str) -> anyhow::Result<()> {
   #[cfg(windows)]
   {
-    let target_window = target
-      .and_then(|value| parse_paste_target(value).ok())
-      .map(|(window, _)| window as WindowHandle)
+    let parsed_target = target.and_then(|value| parse_paste_target(value).ok());
+    let target_window = parsed_target
+      .as_ref()
+      .map(|(window, _, _)| *window as WindowHandle)
       .filter(|window| unsafe { IsWindow(*window) } != 0)
       .unwrap_or_else(|| unsafe { GetForegroundWindow() });
     let monitor = unsafe { MonitorFromWindow(target_window, MONITOR_DEFAULT_TO_NEAREST) };
@@ -1588,7 +1656,8 @@ fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interfac
       anyhow::bail!("读取目标显示器信息失败");
     }
     let dpi = unsafe { GetDpiForWindow(target_window) };
-    let bounds = calculate_panel_bounds(monitor_info.work, dpi, interface_mode);
+    let caret = parsed_target.map(|(_, _, caret)| caret);
+    let bounds = calculate_panel_bounds_near_caret(monitor_info.work, dpi, interface_mode, caret);
     let minimum = if interface_mode == "compact" {
       PhysicalSize::new(340, 420)
     } else {
@@ -1813,8 +1882,13 @@ fn capture_paste_target() -> anyhow::Result<String> {
     }
 
     return Ok(format!(
-      "{};{}",
-      foreground_window as isize, info.focused_window as isize
+      "{};{};{};{};{};{}",
+      foreground_window as isize,
+      info.focused_window as isize,
+      info.caret_rect.left,
+      info.caret_rect.top,
+      info.caret_rect.right,
+      info.caret_rect.bottom
     ));
   }
 
@@ -1825,7 +1899,7 @@ fn capture_paste_target() -> anyhow::Result<String> {
 fn paste_to_target(target: &str) -> anyhow::Result<()> {
   #[cfg(windows)]
   {
-    let (window_value, focused_value) = parse_paste_target(target)?;
+    let (window_value, focused_value, _) = parse_paste_target(target)?;
     let window = window_value as WindowHandle;
     let focused_window = focused_value as WindowHandle;
     if unsafe { IsWindow(window) } == 0 {
@@ -1867,6 +1941,11 @@ fn paste_to_target(target: &str) -> anyhow::Result<()> {
         }
         thread::sleep(Duration::from_millis(16));
         if unsafe { GetForegroundWindow() } == window {
+          if !focused_window.is_null() && unsafe { IsWindow(focused_window) } != 0 {
+            if send_wm_paste(focused_window) {
+              return Ok(());
+            }
+          }
           send_ctrl_v()?;
           return Ok(());
         }
@@ -1889,14 +1968,43 @@ fn paste_to_target(target: &str) -> anyhow::Result<()> {
   anyhow::bail!("仅 Windows 支持自动粘贴")
 }
 
-fn parse_paste_target(target: &str) -> anyhow::Result<(isize, isize)> {
-  let mut parts = target.splitn(2, ';');
-  let window = parts.next().unwrap_or_default().parse::<isize>()?;
-  let focused_window = parts.next().unwrap_or("0").parse::<isize>()?;
+fn parse_paste_target(target: &str) -> anyhow::Result<(isize, isize, NativeRect)> {
+  let values = target.split(';').collect::<Vec<_>>();
+  if values.len() != 1 && values.len() != 2 && values.len() != 6 {
+    anyhow::bail!("无效的粘贴目标窗口")
+  }
+  let window = values[0].parse::<isize>()?;
+  let focused_window = values.get(1).unwrap_or(&"0").parse::<isize>()?;
+  let caret = if values.len() == 6 {
+    NativeRect {
+      left: values[2].parse::<i32>()?,
+      top: values[3].parse::<i32>()?,
+      right: values[4].parse::<i32>()?,
+      bottom: values[5].parse::<i32>()?,
+    }
+  } else {
+    NativeRect { left: 0, top: 0, right: 0, bottom: 0 }
+  };
   if window <= 0 || focused_window < 0 {
     anyhow::bail!("无效的粘贴目标窗口")
   }
-  Ok((window, focused_window))
+  Ok((window, focused_window, caret))
+}
+
+#[cfg(windows)]
+fn send_wm_paste(window: WindowHandle) -> bool {
+  let mut result = 0usize;
+  unsafe {
+    SendMessageTimeoutW(
+      window,
+      WM_PASTE,
+      0,
+      0,
+      SMTO_ABORTIFHUNG,
+      300,
+      &mut result,
+    ) != 0
+  }
 }
 
 #[cfg(windows)]
@@ -2539,10 +2647,16 @@ mod tests {
 
   #[test]
   fn paste_target_parser_rejects_missing_or_invalid_top_level_handles() {
-    assert_eq!(parse_paste_target("123;456").expect("valid handles should parse"), (123, 456));
-    assert_eq!(parse_paste_target("123").expect("focused control is optional"), (123, 0));
+    let parsed = parse_paste_target("123;456;10;20;30;40").expect("valid handles should parse");
+    assert_eq!(parsed.0, 123);
+    assert_eq!(parsed.1, 456);
+    assert_eq!(parsed.2, NativeRect { left: 10, top: 20, right: 30, bottom: 40 });
+    let parsed = parse_paste_target("123").expect("focused control is optional");
+    assert_eq!(parsed.0, 123);
+    assert_eq!(parsed.1, 0);
     assert!(parse_paste_target("0;456").is_err());
     assert!(parse_paste_target("not-a-handle;456").is_err());
+    assert!(parse_paste_target("123;456;1;2").is_err());
   }
 
   #[test]
@@ -2605,6 +2719,26 @@ mod tests {
         ]
       );
     }
+  }
+
+  #[test]
+  fn panel_prefers_the_focused_caret_on_each_monitor() {
+    let work = NativeRect { left: -1920, top: 0, right: 0, bottom: 1080 };
+    let caret = NativeRect { left: -500, top: 120, right: -480, bottom: 144 };
+    let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(caret));
+    assert_eq!(bounds, PanelBounds { x: -468, y: 156, width: 860, height: 680 });
+
+    let lower_right = NativeRect { left: -100, top: 900, right: -80, bottom: 924 };
+    let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(lower_right));
+    assert_eq!(bounds, PanelBounds { x: -972, y: 208, width: 860, height: 680 });
+  }
+
+  #[test]
+  fn invalid_caret_falls_back_to_monitor_layout() {
+    let work = NativeRect { left: 1920, top: 0, right: 4480, bottom: 1400 };
+    let invalid = NativeRect { left: 0, top: 0, right: 0, bottom: 0 };
+    let bounds = calculate_panel_bounds_near_caret(work, 144, "compact", Some(invalid));
+    assert_eq!(bounds, PanelBounds { x: 3865, y: 530, width: 585, height: 840 });
   }
 
   #[test]

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { CheckCircle2, Download, RefreshCw, RotateCw, X } from '@lucide/vue'
+import { computed } from 'vue'
+import { CheckCircle2, Clipboard, Download, ExternalLink, RefreshCw, RotateCw, X } from '@lucide/vue'
 import { useAppUpdater } from '../composables/useAppUpdater'
+import { getLightClipApi } from '../runtime'
 
 const {
   status,
@@ -13,6 +15,24 @@ const {
   installUpdate,
   closeDialog,
 } = useAppUpdater()
+const lightClip = getLightClipApi()
+
+const releasePageUrl = 'https://github.com/leaf-zly/lightclip/releases/latest'
+const downloadUrl = computed(() => releasePageUrl)
+
+/**
+ * Opens the release page when the signed updater cannot download an update.
+ */
+async function openReleasePage(): Promise<void> {
+  await lightClip.openExternalUrl(downloadUrl.value)
+}
+
+/**
+ * Copies the current release download URL to the system clipboard.
+ */
+async function copyReleaseUrl(): Promise<void> {
+  await navigator.clipboard?.writeText(downloadUrl.value)
+}
 </script>
 
 <template>
@@ -52,6 +72,7 @@ const {
               class="updater-state-icon"
             />
             <p v-if="status === 'error'" class="updater-error">{{ errorMessage }}</p>
+            <p v-if="status === 'error'" class="updater-hint">你可以打开 GitHub Release 页面手动下载。</p>
             <p v-else-if="update?.body" class="updater-notes">{{ update.body }}</p>
             <p v-else-if="status === 'available'">签名验证将在安装前自动完成。</p>
             <p v-else-if="status === 'current'">无需安装任何内容。</p>
@@ -68,6 +89,14 @@ const {
             <button v-if="status === 'available' || status === 'error'" class="text-button" type="button" @click="checkForUpdate(true)">
               <RefreshCw :size="15" />
               重新检查
+            </button>
+            <button v-if="status === 'error'" class="text-button" type="button" @click="copyReleaseUrl">
+              <Clipboard :size="15" />
+              复制下载链接
+            </button>
+            <button v-if="status === 'error'" class="text-button" type="button" @click="openReleasePage">
+              <ExternalLink :size="15" />
+              浏览器下载
             </button>
             <button v-if="status === 'available'" class="text-button primary" type="button" @click="installUpdate">
               <Download :size="15" />

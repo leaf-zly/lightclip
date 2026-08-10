@@ -5,10 +5,15 @@
  * @returns A stable message suitable for the update dialog.
  */
 export function describeUpdaterError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim()
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  const message = raw.trim()
+  if (!message) {
+    return '更新服务暂时不可用，请稍后重试'
   }
-  return typeof error === 'string' && error.trim() ? error.trim() : '更新服务暂时不可用，请稍后重试'
+  if (/timed out|timeout|network|fetch|connection|url|endpoint|github/i.test(message)) {
+    return '暂时无法连接更新服务，请检查网络后重试，或使用浏览器下载。'
+  }
+  return message.replace(/https?:\/\/\S+/gi, '更新服务器')
 }
 
 /**

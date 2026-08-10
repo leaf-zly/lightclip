@@ -18,6 +18,8 @@ export function useAppUpdater() {
   const errorMessage = ref('')
   const downloadedBytes = ref(0)
   const totalBytes = ref<number>()
+  const startupCheckKey = 'lightclip.last-update-check'
+  const startupCheckIntervalMs = 6 * 60 * 60 * 1000
   let startupTimer: number | null = null
 
   const progressPercent = computed(() => calculateDownloadPercent(downloadedBytes.value, totalBytes.value))
@@ -30,12 +32,15 @@ export function useAppUpdater() {
     }
     status.value = 'checking'
     errorMessage.value = ''
+    if (!interactive) {
+      localStorage.setItem(startupCheckKey, String(Date.now()))
+    }
     if (interactive) {
       dialogOpen.value = true
     }
     try {
       const { check } = await import('@tauri-apps/plugin-updater')
-      const nextUpdate = await check({ timeout: 15_000 })
+      const nextUpdate = await check({ timeout: 3_000 })
       update.value = nextUpdate
       if (nextUpdate) {
         status.value = 'available'
@@ -87,6 +92,10 @@ export function useAppUpdater() {
   }
 
   onMounted(() => {
+    const lastCheck = Number(localStorage.getItem(startupCheckKey) ?? 0)
+    if (Date.now() - lastCheck < startupCheckIntervalMs) {
+      return
+    }
     startupTimer = window.setTimeout(() => {
       void checkForUpdate(false)
     }, 2500)

@@ -180,10 +180,11 @@ button {
 }
 
 .window-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
-  border-radius: 5px;
+  border-radius: 6px;
+  object-fit: contain;
 }
 
 .window-controls {
@@ -228,9 +229,11 @@ button {
 
 .topbar {
   display: flex;
+  flex: 0 0 42px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
   min-height: 42px;
   -webkit-app-region: drag;
 }
@@ -340,9 +343,11 @@ h1 {
 
 .search-row {
   display: grid;
+  flex: 0 0 52px;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   min-height: 52px;
   padding: 0 14px;
   color: var(--accent-strong);
@@ -602,9 +607,13 @@ h1 {
 
 .list-toolbar {
   display: flex;
+  flex: 0 0 34px;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
   min-height: 34px;
+  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
 }
@@ -633,8 +642,9 @@ h1 {
 
 .history-list {
   display: grid;
-  min-height: 0;
   flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   align-content: start;
   gap: 8px;
   overflow: auto;
@@ -966,10 +976,13 @@ kbd {
 
 .filter-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  flex: 0 0 38px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   min-height: 38px;
+  overflow: hidden;
   color: var(--muted);
 }
 
@@ -977,6 +990,7 @@ kbd {
   display: flex;
   min-width: 0;
   gap: 6px;
+  overflow: hidden;
   overflow-x: auto;
   padding-bottom: 1px;
 }
@@ -1232,6 +1246,7 @@ kbd {
 
 
 .filter-select {
+  flex: 0 0 104px;
   min-width: 104px;
   height: 32px;
   border: 1px solid var(--border);
@@ -1278,7 +1293,17 @@ kbd {
   max-height: 240px; overflow: auto; color: var(--text);
   font-size: 13px; line-height: 1.6; white-space: pre-wrap;
 }
-.updater-error { color: var(--danger); }
+.updater-error {
+  margin: 0;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.updater-hint {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .update-progress {
   height: 7px; margin-top: 18px; overflow: hidden;
   background: var(--surface-muted); border-radius: 4px;
@@ -1289,11 +1314,19 @@ kbd {
 }
 .updater-body small { display: block; margin-top: 8px; }
 .updater-actions {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
 }
 .spinning { animation: updater-spin 850ms linear infinite; }
 @keyframes updater-spin { to { transform: rotate(360deg); } }
+
+.shell.is-reflowing {
+  visibility: hidden;
+}
 
 /* Win+V-inspired compact panel */
 .shell.interface-compact .maximize-control,
