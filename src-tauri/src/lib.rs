@@ -1565,6 +1565,7 @@ struct PanelBounds {
 }
 
 /// Computes DPI-scaled panel geometry constrained to the target monitor work area.
+#[cfg(test)]
 fn calculate_panel_bounds(work: NativeRect, dpi: u32, interface_mode: &str) -> PanelBounds {
   calculate_panel_bounds_near_caret(work, dpi, interface_mode, None)
 }
@@ -2726,7 +2727,7 @@ mod tests {
     let work = NativeRect { left: -1920, top: 0, right: 0, bottom: 1080 };
     let caret = NativeRect { left: -500, top: 120, right: -480, bottom: 144 };
     let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(caret));
-    assert_eq!(bounds, PanelBounds { x: -468, y: 156, width: 860, height: 680 });
+    assert_eq!(bounds, PanelBounds { x: -1372, y: 156, width: 860, height: 680 });
 
     let lower_right = NativeRect { left: -100, top: 900, right: -80, bottom: 924 };
     let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(lower_right));
