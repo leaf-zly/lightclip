@@ -53,7 +53,7 @@ git push origin v2.2.2
 
 Only manual dispatches and `v2.*` tags run the packaging workflow. A tag run publishes matching installer, portable executable, signature, and updater metadata to GitHub Releases using `RELEASE_NOTES.md`.
 
-The release job tests Rust in Release mode before packaging, allowing Cargo to reuse compiled dependencies for the final application. Do not upload a locally built replacement under the same release.
+The packaging job waits for the same commit's complete `CI` workflow to pass, restores its shared Release cache, and then runs only packaging plus packaged-application smoke tests. Do not upload a locally built replacement under the same release.
 
 ## Verification
 

@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -21,6 +22,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Verify Source CI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $deadline = [DateTime]::UtcNow.AddMinutes(10)
+          do {
+            $runs = gh run list --repo "$env:GITHUB_REPOSITORY" --workflow ci.yml --commit "$env:GITHUB_SHA" --limit 1 --json status,conclusion,url | ConvertFrom-Json
+            $run = $runs | Select-Object -First 1
+            if ($null -ne $run -and $run.status -eq 'completed') {
+              if ($run.conclusion -ne 'success') {
+                throw "Source CI failed: $($run.url)"
+              }
+              Write-Host "Source CI passed: $($run.url)"
+              break
+            }
+            if ([DateTime]::UtcNow -ge $deadline) {
+              throw "Timed out waiting for source CI on $env:GITHUB_SHA."
+            }
+            Start-Sleep -Seconds 10
+          } while ($true)
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -45,21 +68,6 @@ jobs:
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Typecheck Sources
-        run: pnpm typecheck
-
-      - name: Test Renderer
-        run: pnpm test
-
-      - name: Build Renderer For Native Tests
-        run: pnpm build:renderer
-
-      - name: Verify Dependency Lock
-        run: cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml | Out-Null
-
-      - name: Test Tauri Host In Release Profile
-        run: cargo test --release --locked --lib --manifest-path src-tauri/Cargo.toml
 
       - name: Verify Updater Signing Key
         shell: pwsh
