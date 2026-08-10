@@ -6,6 +6,21 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.2.1] - 2026-08-10
+
+### Fixed
+
+- Places the clipboard panel beside the focused input caret across multi-monitor layouts.
+- Uses focused-control WM_PASTE delivery before the atomic keyboard fallback.
+- Stabilizes the standard panel layout and hides intermediate mode-switch resizing.
+- Improves updater errors and adds browser-download and copy-link recovery actions.
+- Replaces the title-bar icon with a dedicated small-size mark.
+
+### Verified
+
+- Twelve Rust native tests and the packaged Alt+V/focused-textbox paste smoke test pass on GitHub-hosted Windows.
+- Tauri NSIS packaging and updater signing checks pass.
+
 ## [2.2.0] - 2026-08-07
 
 ### Added
@@ -391,6 +406,7 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Startup registration setting.
 - Windows installer and portable packaging through `electron-builder`.
 
+[2.2.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.2.1
 [2.2.0]: https://github.com/leaf-zly/lightclip/releases/tag/v2.2.0
 [2.1.2]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.2
 [2.1.1]: https://github.com/leaf-zly/lightclip/releases/tag/v2.1.1
