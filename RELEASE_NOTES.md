@@ -1,32 +1,25 @@
-# LightClip v2.2.1
+# LightClip v2.2.2
 
-This maintenance release improves update recovery, focused-input placement, paste reliability, and panel layout stability.
+This maintenance release makes clipboard selection, focused-input placement, interface switching, and narrow layouts reliable.
 
 ## Fixed
 
-- Places standard and compact panels beside the focused input caret on multi-monitor desktops, including negative monitor coordinates and work-area edge fallback.
-- Sends WM_PASTE directly to the captured focused control before falling back to an atomic Ctrl+V input transaction.
-- Prevents interface-mode switching from exposing intermediate native window sizes.
-- Keeps the standard filter row, toolbar, and history list stable with large clipboard histories.
-- Replaces the title-bar mark with a dedicated small-size icon.
-- Converts updater transport failures into readable messages and provides browser-download and copy-link fallbacks.
-
-## Improved
-
-- Limits silent startup update checks to once every six hours and uses a short connection timeout.
-- Preserves compatibility with paste targets captured by earlier 2.x builds.
+- Restores the original focused control and sends an atomic Ctrl+V transaction so paste-after-copy inserts into the intended input without requiring another click.
+- Converts caret client coordinates to screen coordinates and places the panel beside the focused caret across multi-monitor desktops, including negative monitor coordinates.
+- Adapts the standard panel width near work-area edges instead of covering the caret.
+- Switches between standard and compact modes without hiding the native window or exposing a white intermediate frame.
+- Keeps filter controls, toolbar actions, image previews, and history rows aligned at narrow standard-panel widths.
 
 ## Verification
 
-- TypeScript and Vue type checking.
-- Renderer unit tests and production build.
-- Twelve Rust native tests, including multi-monitor caret positioning.
-- GitHub-hosted Windows NSIS packaging.
-- Packaged Alt+V activation and exact focused-textbox paste smoke testing.
+- Packaged Alt+V activation completed in 25 ms.
+- The packaged panel opened 17 px from the focused caret.
+- Packaged paste-after-copy restored the focused textbox and inserted the selected history item.
+- TypeScript and Vue type checking, renderer tests, production build, Rust native tests, and GitHub-hosted Windows packaging pass.
 
 ## Downloads
 
-- LightClip_2.2.1_x64-setup.exe: recommended current-user installer.
+- LightClip_2.2.2_x64-setup.exe: recommended current-user installer.
 - LightClip-portable-x64.exe: standalone application binary.
 
 Updater artifacts are signed with the Tauri updater key. Windows executables are not Authenticode-signed, so SmartScreen or third-party antivirus products may still show an unknown-publisher warning.

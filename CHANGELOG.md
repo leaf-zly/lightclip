@@ -6,6 +6,21 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.2.2] - 2026-08-11
+
+### Fixed
+
+- Restores the original focused control and sends one atomic Ctrl+V input transaction so paste-after-copy fills the intended input reliably.
+- Converts caret coordinates to screen coordinates and keeps the panel beside the caret across narrow and multi-monitor work areas.
+- Switches between standard and compact modes without hiding the native window or exposing a white intermediate frame.
+- Keeps filters, toolbar actions, image previews, and history rows stable at narrow standard-panel widths.
+
+### Verified
+
+- Packaged Alt+V activation completed in 25 ms, with the panel opening 17 px from the focused caret.
+- Packaged paste-after-copy restored the focused textbox and inserted the selected history item.
+- Type checking, renderer tests, production build, Rust native tests, and GitHub-hosted Windows packaging pass.
+
 ## [2.2.1] - 2026-08-10
 
 ### Fixed
