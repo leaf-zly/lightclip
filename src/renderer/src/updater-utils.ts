@@ -14,6 +14,64 @@ export interface ParsedReleaseNotes {
   sections: ReleaseNoteSection[]
 }
 
+/** Retry configuration for a signed updater check. */
+export interface UpdateCheckRetryOptions {
+  /** Per-attempt request timeouts in milliseconds. */
+  timeouts: readonly number[]
+  /** Pause between retryable attempts in milliseconds. */
+  retryDelayMs: number
+  /** Receives the one-based attempt number before each request starts. */
+  onAttempt?: (attempt: number, total: number) => void
+}
+
+/**
+ * Returns whether an updater failure is likely transient and safe to retry.
+ * Signature, parsing, and permission errors intentionally fail immediately.
+ *
+ * @param error Failure thrown by the Tauri updater API.
+ * @returns Whether another network request may recover.
+ */
+export function isRetryableUpdaterError(error: unknown): boolean {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  return /timed out|timeout|network|fetch|connection|connect|dns|resolve|temporar|url|endpoint|github/i.test(raw)
+}
+
+/**
+ * Runs a signed update check with bounded, network-only retries.
+ *
+ * @param operation Updater check accepting the current request timeout.
+ * @param options Retry timeouts, delay, and optional progress observer.
+ * @returns The first successful updater result.
+ * @throws The final failure, or the first non-retryable failure.
+ */
+export async function runUpdateCheckWithRetry<T>(
+  operation: (timeoutMs: number) => Promise<T>,
+  options: UpdateCheckRetryOptions,
+): Promise<T> {
+  if (options.timeouts.length === 0) {
+    throw new Error('At least one updater timeout is required.')
+  }
+
+  let lastError: unknown
+  for (const [index, timeoutMs] of options.timeouts.entries()) {
+    options.onAttempt?.(index + 1, options.timeouts.length)
+    try {
+      return await operation(timeoutMs)
+    } catch (error) {
+      lastError = error
+      const hasNextAttempt = index + 1 < options.timeouts.length
+      if (!hasNextAttempt || !isRetryableUpdaterError(error)) {
+        throw error
+      }
+      if (options.retryDelayMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, options.retryDelayMs))
+      }
+    }
+  }
+
+  throw lastError
+}
+
 /**
  * Converts the small Markdown subset used by GitHub release notes into safe,
  * structured text without injecting HTML into the updater WebView.
@@ -66,8 +124,8 @@ export function describeUpdaterError(error: unknown): string {
   if (!message) {
     return '更新服务暂时不可用，请稍后重试'
   }
-  if (/timed out|timeout|network|fetch|connection|url|endpoint|github/i.test(message)) {
-    return '暂时无法连接更新服务，请检查网络后重试，或使用浏览器下载。'
+  if (isRetryableUpdaterError(error)) {
+    return '连接更新服务超时。请稍后重试，或直接使用浏览器下载安装包。'
   }
   return message.replace(/https?:\/\/\S+/gi, '更新服务器')
 }

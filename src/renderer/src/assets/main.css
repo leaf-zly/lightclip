@@ -114,6 +114,8 @@ button {
   --surface-pressed: color-mix(in srgb, var(--accent) 16%, #2d3440);
   --border: rgb(255 255 255 / 0.08);
   --border-strong: rgb(255 255 255 / 0.16);
+  --danger: #ff8a80;
+  --danger-soft: rgb(255 82 82 / 0.15);
   --control-hover: rgb(var(--accent-rgb) / 0.18);
   --shadow: 0 24px 70px rgb(0 0 0 / 0.34);
   --preview-grid-a: #222733;
@@ -141,6 +143,8 @@ button {
     --surface-pressed: color-mix(in srgb, var(--accent) 16%, #2d3440);
     --border: rgb(255 255 255 / 0.08);
     --border-strong: rgb(255 255 255 / 0.16);
+    --danger: #ff8a80;
+    --danger-soft: rgb(255 82 82 / 0.15);
     --control-hover: rgb(var(--accent-rgb) / 0.18);
     --shadow: 0 24px 70px rgb(0 0 0 / 0.34);
     --preview-grid-a: #222733;

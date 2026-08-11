@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { calculateDownloadPercent, describeUpdaterError, parseReleaseNotes } from './updater-utils'
+import {
+  calculateDownloadPercent,
+  describeUpdaterError,
+  isRetryableUpdaterError,
+  parseReleaseNotes,
+  runUpdateCheckWithRetry,
+} from './updater-utils'
 
 describe('parseReleaseNotes', () => {
   it('extracts the release summary and named sections without Markdown syntax', () => {
@@ -45,7 +51,41 @@ describe('calculateDownloadPercent', () => {
 
 describe('describeUpdaterError', () => {
   it('uses error messages and provides a stable fallback', () => {
-    expect(describeUpdaterError(new Error('network unavailable'))).toBe('暂时无法连接更新服务，请检查网络后重试，或使用浏览器下载。')
+    expect(describeUpdaterError(new Error('network unavailable'))).toBe('连接更新服务超时。请稍后重试，或直接使用浏览器下载安装包。')
     expect(describeUpdaterError(null)).toBe('更新服务暂时不可用，请稍后重试')
+  })
+})
+
+describe('runUpdateCheckWithRetry', () => {
+  it('retries transient failures with the configured longer timeout', async () => {
+    const attempts: number[] = []
+    const result = await runUpdateCheckWithRetry(
+      async (timeoutMs) => {
+        attempts.push(timeoutMs)
+        if (attempts.length === 1) {
+          throw new Error('request timed out')
+        }
+        return 'v2.2.3'
+      },
+      { timeouts: [6_000, 20_000], retryDelayMs: 0 },
+    )
+
+    expect(result).toBe('v2.2.3')
+    expect(attempts).toEqual([6_000, 20_000])
+  })
+
+  it('does not retry signature or metadata failures', async () => {
+    let attempts = 0
+    await expect(
+      runUpdateCheckWithRetry(
+        async () => {
+          attempts += 1
+          throw new Error('signature verification failed')
+        },
+        { timeouts: [6_000, 20_000], retryDelayMs: 0 },
+      ),
+    ).rejects.toThrow('signature verification failed')
+    expect(attempts).toBe(1)
+    expect(isRetryableUpdaterError('signature verification failed')).toBe(false)
   })
 })

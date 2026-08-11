@@ -11,6 +11,8 @@ const {
   update,
   errorMessage,
   progressPercent,
+  checkAttempt,
+  checkAttemptTotal,
   isBusy,
   checkForUpdate,
   installUpdate,
@@ -97,7 +99,9 @@ function handleDialogKeydown(event: KeyboardEvent): void {
               <strong v-else-if="status === 'error'">检查更新失败</strong>
               <strong v-else>正在检查更新</strong>
               <span v-if="update?.currentVersion">当前版本 v{{ update.currentVersion }}</span>
-              <span v-else-if="status === 'checking'">正在连接 GitHub 更新服务</span>
+              <span v-else-if="status === 'checking'">
+                正在连接更新服务<span v-if="checkAttemptTotal > 1">（第 {{ checkAttempt }}/{{ checkAttemptTotal }} 次）</span>
+              </span>
               <span v-else-if="status === 'current'">暂时没有需要安装的内容</span>
               <span v-else-if="status === 'error'">可以重试或在浏览器中下载安装包</span>
             </div>
@@ -138,7 +142,7 @@ function handleDialogKeydown(event: KeyboardEvent): void {
             <Clipboard v-else :size="15" />
             {{ copied ? '已复制' : '复制链接' }}
           </button>
-          <button v-if="status === 'error'" class="text-button" type="button" @click="openReleasePage">
+          <button v-if="status === 'error'" class="text-button primary" type="button" @click="openReleasePage">
             <ExternalLink :size="15" />
             浏览器下载
           </button>

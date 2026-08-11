@@ -1,6 +1,6 @@
 import type { Update } from '@tauri-apps/plugin-updater'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { calculateDownloadPercent, describeUpdaterError } from '../updater-utils'
+import { calculateDownloadPercent, describeUpdaterError, runUpdateCheckWithRetry } from '../updater-utils'
 
 /** Lifecycle states surfaced by the signed application updater. */
 export type UpdaterStatus = 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'
@@ -18,6 +18,8 @@ export function useAppUpdater() {
   const errorMessage = ref('')
   const downloadedBytes = ref(0)
   const totalBytes = ref<number>()
+  const checkAttempt = ref(0)
+  const checkAttemptTotal = ref(0)
   const startupCheckKey = 'lightclip.last-update-check'
   const startupCheckIntervalMs = 6 * 60 * 60 * 1000
   let startupTimer: number | null = null
@@ -40,7 +42,15 @@ export function useAppUpdater() {
     }
     try {
       const { check } = await import('@tauri-apps/plugin-updater')
-      const nextUpdate = await check({ timeout: 3_000 })
+      const timeouts = interactive ? [6_000, 20_000] : [8_000]
+      const nextUpdate = await runUpdateCheckWithRetry((timeout) => check({ timeout }), {
+        timeouts,
+        retryDelayMs: 650,
+        onAttempt: (attempt, total) => {
+          checkAttempt.value = attempt
+          checkAttemptTotal.value = total
+        },
+      })
       update.value = nextUpdate
       if (nextUpdate) {
         status.value = 'available'
@@ -114,6 +124,8 @@ export function useAppUpdater() {
     update,
     errorMessage,
     progressPercent,
+    checkAttempt,
+    checkAttemptTotal,
     isBusy,
     checkForUpdate,
     installUpdate,
