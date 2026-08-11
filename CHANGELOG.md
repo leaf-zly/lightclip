@@ -6,6 +6,25 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.2.3] - 2026-08-11
+
+### Fixed
+
+- Rejects stale caret coordinates outside the captured target window and falls back to the shortcut-time pointer position for custom input controls.
+- Keeps the standard panel beside centered inputs on common 1366px laptop displays by using its verified responsive width range.
+- Scales native minimum panel dimensions consistently with the target monitor DPI.
+
+### Improved
+
+- Redesigns the signed-update dialog with clear version status, structured release notes, stable progress feedback, and responsive actions.
+- Adds Escape handling, initial close-button focus, accessible live status, and copy-link confirmation.
+
+### Verified
+
+- Five updater utility tests, renderer type checking, and production build pass.
+- Windows native release tests cover stale-caret fallback and centered-anchor placement.
+- Update-dialog visual checks pass at 860x680 and 390x560 without overflow or overlapping controls.
+
 ## [2.2.2] - 2026-08-11
 
 ### Fixed
