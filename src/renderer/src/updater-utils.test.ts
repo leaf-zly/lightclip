@@ -1,5 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { calculateDownloadPercent, describeUpdaterError } from './updater-utils'
+import { calculateDownloadPercent, describeUpdaterError, parseReleaseNotes } from './updater-utils'
+
+describe('parseReleaseNotes', () => {
+  it('extracts the release summary and named sections without Markdown syntax', () => {
+    const notes = parseReleaseNotes(`# LightClip v2.2.2
+
+This release improves positioning.
+
+## Fixed
+
+- Restores the **focused control**.
+- Keeps the panel beside the caret.
+
+## Verification
+
+- Packaged smoke test passed.`)
+
+    expect(notes).toEqual({
+      summary: ['This release improves positioning.'],
+      sections: [
+        { title: 'Fixed', items: ['Restores the focused control.', 'Keeps the panel beside the caret.'] },
+        { title: 'Verification', items: ['Packaged smoke test passed.'] },
+      ],
+    })
+  })
+
+  it('returns an empty structure for missing notes', () => {
+    expect(parseReleaseNotes()).toEqual({ summary: [], sections: [] })
+  })
+})
 
 describe('calculateDownloadPercent', () => {
   it('returns null without a valid content length', () => {

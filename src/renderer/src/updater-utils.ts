@@ -1,3 +1,59 @@
+/** A structured release-note section rendered by the updater dialog. */
+export interface ReleaseNoteSection {
+  /** Section heading without Markdown markers. */
+  title: string
+  /** Plain-text paragraphs or list entries in display order. */
+  items: string[]
+}
+
+/** Parsed release notes suitable for safe Vue template rendering. */
+export interface ParsedReleaseNotes {
+  /** Introductory paragraphs that appear before the first section. */
+  summary: string[]
+  /** Named sections extracted from level-two Markdown headings. */
+  sections: ReleaseNoteSection[]
+}
+
+/**
+ * Converts the small Markdown subset used by GitHub release notes into safe,
+ * structured text without injecting HTML into the updater WebView.
+ *
+ * @param body Raw release body returned by the Tauri updater.
+ * @returns Introductory paragraphs and section entries in source order.
+ */
+export function parseReleaseNotes(body?: string | null): ParsedReleaseNotes {
+  const summary: string[] = []
+  const sections: ReleaseNoteSection[] = []
+  let currentSection: ReleaseNoteSection | null = null
+
+  for (const rawLine of (body ?? '').split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || /^#\s+/.test(line)) {
+      continue
+    }
+    const heading = line.match(/^##\s+(.+)$/)
+    if (heading) {
+      currentSection = { title: heading[1].trim(), items: [] }
+      sections.push(currentSection)
+      continue
+    }
+    const text = line.replace(/^[-*]\s+/, '').replace(/\*\*(.+?)\*\*/g, '$1').trim()
+    if (!text) {
+      continue
+    }
+    if (currentSection) {
+      currentSection.items.push(text)
+    } else {
+      summary.push(text)
+    }
+  }
+
+  return {
+    summary,
+    sections: sections.filter((section) => section.items.length > 0),
+  }
+}
+
 /**
  * Converts an unknown updater failure into a concise user-facing message.
  *

@@ -129,6 +129,8 @@ extern "system" {
   fn GetWindowThreadProcessId(window: WindowHandle, process_id: *mut u32) -> u32;
   fn GetGUIThreadInfo(thread_id: u32, info: *mut GuiThreadInfo) -> i32;
   fn ClientToScreen(window: WindowHandle, point: *mut NativePoint) -> i32;
+  fn GetCursorPos(point: *mut NativePoint) -> i32;
+  fn GetWindowRect(window: WindowHandle, rect: *mut NativeRect) -> i32;
   fn IsWindow(window: WindowHandle) -> i32;
   fn IsIconic(window: WindowHandle) -> i32;
   fn ShowWindowAsync(window: WindowHandle, command: i32) -> i32;
@@ -1596,7 +1598,8 @@ fn calculate_panel_bounds_near_caret(
       && rect.top >= work.top
       && rect.top < work.bottom
   }) {
-    let minimum_width = if interface_mode == "compact" { 340 } else { 720 }.min(work_width);
+    let minimum_logical_width: f64 = if interface_mode == "compact" { 320.0 } else { 560.0 };
+    let minimum_width = ((minimum_logical_width * scale).round() as u32).min(work_width);
     let right_space = (work.right - caret.right - margin).max(0) as u32;
     let left_space = (caret.left - margin - work.left).max(0) as u32;
     if right_space < width && left_space < width {
@@ -1680,11 +1683,13 @@ fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interfac
     }
     let dpi = unsafe { GetDpiForWindow(target_window) };
     let bounds = calculate_panel_bounds_near_caret(monitor_info.work, dpi, interface_mode, caret);
-    let minimum = if interface_mode == "compact" {
-      PhysicalSize::new(340, 420)
-    } else {
-      PhysicalSize::new(720, 520)
-    };
+    let scale = (dpi.max(96) as f64) / 96.0;
+    let (minimum_logical_width, minimum_logical_height): (f64, f64) =
+      if interface_mode == "compact" { (320.0, 420.0) } else { (560.0, 480.0) };
+    let minimum = PhysicalSize::new(
+      ((minimum_logical_width * scale).round() as u32).min(bounds.width),
+      ((minimum_logical_height * scale).round() as u32).min(bounds.height),
+    );
     let _ = window.unmaximize();
     window.set_min_size(Some(minimum))?;
     window.set_size(PhysicalSize::new(bounds.width, bounds.height))?;
@@ -1905,15 +1910,20 @@ fn capture_paste_target() -> anyhow::Result<String> {
     } else {
       invalid_caret_rect()
     };
+    let mut target_bounds = NativeRect { left: 0, top: 0, right: 0, bottom: 0 };
+    let target_bounds = (unsafe { GetWindowRect(foreground_window, &mut target_bounds) } != 0).then_some(target_bounds);
+    let mut cursor = NativePoint { x: 0, y: 0 };
+    let cursor = (unsafe { GetCursorPos(&mut cursor) } != 0).then_some(cursor);
+    let position_anchor = select_position_anchor(target_bounds, caret_rect, cursor);
 
     return Ok(format!(
       "{};{};{};{};{};{}",
       foreground_window as isize,
       info.focused_window as isize,
-      caret_rect.left,
-      caret_rect.top,
-      caret_rect.right,
-      caret_rect.bottom
+      position_anchor.left,
+      position_anchor.top,
+      position_anchor.right,
+      position_anchor.bottom
     ));
   }
 
@@ -1939,6 +1949,43 @@ fn caret_rect_to_screen(window: WindowHandle, rect: NativeRect) -> Option<Native
     right: bottom_right.x,
     bottom: bottom_right.y,
   })
+}
+
+/// Selects a trustworthy panel anchor, preferring a caret inside the captured
+/// target window and falling back to the shortcut-time pointer position.
+#[cfg(windows)]
+fn select_position_anchor(
+  target_bounds: Option<NativeRect>,
+  caret: NativeRect,
+  cursor: Option<NativePoint>,
+) -> NativeRect {
+  let caret_center = NativePoint {
+    x: caret.left + (caret.right - caret.left) / 2,
+    y: caret.top + (caret.bottom - caret.top) / 2,
+  };
+  let caret_matches_target = target_bounds.map(|bounds| point_is_near_rect(caret_center, bounds, 8)).unwrap_or(true);
+  if is_caret_rect_usable(caret) && caret_matches_target {
+    return caret;
+  }
+
+  cursor
+    .map(|point| NativeRect {
+      left: point.x,
+      top: point.y,
+      right: point.x.saturating_add(1),
+      bottom: point.y.saturating_add(1),
+    })
+    .unwrap_or_else(invalid_caret_rect)
+}
+
+/// Checks whether a screen point belongs to a rectangle with a small tolerance
+/// for carets rendered directly on a client edge.
+#[cfg(windows)]
+fn point_is_near_rect(point: NativePoint, rect: NativeRect, tolerance: i32) -> bool {
+  point.x >= rect.left.saturating_sub(tolerance)
+    && point.x <= rect.right.saturating_add(tolerance)
+    && point.y >= rect.top.saturating_sub(tolerance)
+    && point.y <= rect.bottom.saturating_add(tolerance)
 }
 
 fn invalid_caret_rect() -> NativeRect {
@@ -2780,6 +2827,30 @@ mod tests {
     assert_eq!(bounds.width, 738);
     assert_eq!(bounds.x, 286);
     assert!(bounds.x > caret.right);
+  }
+
+  #[test]
+  fn standard_panel_stays_beside_a_centered_anchor_on_common_laptop_displays() {
+    let work = NativeRect { left: 0, top: 0, right: 1366, bottom: 728 };
+    let caret = NativeRect { left: 680, top: 330, right: 682, bottom: 354 };
+    let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(caret));
+
+    assert_eq!(bounds.width, 672);
+    assert_eq!(bounds.x, 694);
+    assert!(bounds.x > caret.right);
+  }
+
+  #[cfg(windows)]
+  #[test]
+  fn stale_caret_outside_target_falls_back_to_shortcut_pointer() {
+    let target = NativeRect { left: 100, top: 100, right: 900, bottom: 700 };
+    let stale_caret = NativeRect { left: 1500, top: 200, right: 1502, bottom: 224 };
+    let cursor = NativePoint { x: 420, y: 360 };
+
+    assert_eq!(
+      select_position_anchor(Some(target), stale_caret, Some(cursor)),
+      NativeRect { left: 420, top: 360, right: 421, bottom: 361 },
+    );
   }
 
   #[test]
