@@ -26,6 +26,28 @@ public static class LightClipShortcutProbe
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr window);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr window, out Rect rect);
+
+    public static int[] GetWindowBounds(IntPtr window)
+    {
+        if (!GetWindowRect(window, out Rect rect))
+        {
+            throw new InvalidOperationException("Could not read the LightClip window bounds.");
+        }
+
+        return new[] { rect.Left, rect.Top, rect.Right, rect.Bottom };
+    }
+
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
 
@@ -183,6 +205,7 @@ try {
   [void]$textBox.Focus()
   [System.Windows.Forms.Application]::DoEvents()
   Start-Sleep -Milliseconds 100
+  $caretPoint = $textBox.PointToScreen($textBox.GetPositionFromCharIndex($textBox.SelectionStart))
 
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
   [LightClipShortcutProbe]::SendAltV()
@@ -196,7 +219,16 @@ try {
     throw 'Alt+V did not show the packaged LightClip window within 3 seconds.'
   }
 
+  $panelBounds = [LightClipShortcutProbe]::GetWindowBounds($window)
+  $horizontalDistance = [Math]::Max(0, [Math]::Max($panelBounds[0] - $caretPoint.X, $caretPoint.X - $panelBounds[2]))
+  $verticalDistance = [Math]::Max(0, [Math]::Max($panelBounds[1] - $caretPoint.Y, $caretPoint.Y - $panelBounds[3]))
+  $caretDistance = [Math]::Sqrt(($horizontalDistance * $horizontalDistance) + ($verticalDistance * $verticalDistance))
+  if ($caretDistance -gt 96) {
+    throw "LightClip opened too far from the focused caret: $([Math]::Round($caretDistance)) px."
+  }
+
   Write-Host "Packaged Alt+V opened LightClip in $($stopwatch.ElapsedMilliseconds) ms."
+  Write-Host "Packaged LightClip opened $([Math]::Round($caretDistance)) px from the focused caret."
 
   # Visibility can precede the first WebView render on a cold CI machine.
   # Retry Enter only while the panel remains visible; a handled copy hides it,

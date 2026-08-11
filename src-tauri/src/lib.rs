@@ -54,6 +54,14 @@ struct NativeRect {
 
 #[cfg(windows)]
 #[repr(C)]
+#[derive(Clone, Copy)]
+struct NativePoint {
+  x: i32,
+  y: i32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
 struct NativeMonitorInfo {
   size: u32,
   monitor: NativeRect,
@@ -120,6 +128,7 @@ extern "system" {
   fn GetForegroundWindow() -> WindowHandle;
   fn GetWindowThreadProcessId(window: WindowHandle, process_id: *mut u32) -> u32;
   fn GetGUIThreadInfo(thread_id: u32, info: *mut GuiThreadInfo) -> i32;
+  fn ClientToScreen(window: WindowHandle, point: *mut NativePoint) -> i32;
   fn IsWindow(window: WindowHandle) -> i32;
   fn IsIconic(window: WindowHandle) -> i32;
   fn ShowWindowAsync(window: WindowHandle, command: i32) -> i32;
@@ -128,18 +137,10 @@ extern "system" {
   fn SetFocus(window: WindowHandle) -> WindowHandle;
   fn AttachThreadInput(attach_thread: u32, attach_to_thread: u32, attach: i32) -> i32;
   fn MonitorFromWindow(window: WindowHandle, flags: u32) -> WindowHandle;
+  fn MonitorFromPoint(point: NativePoint, flags: u32) -> WindowHandle;
   fn GetMonitorInfoW(monitor: WindowHandle, info: *mut NativeMonitorInfo) -> i32;
   fn GetDpiForWindow(window: WindowHandle) -> u32;
   fn SendInput(input_count: u32, inputs: *const NativeInput, input_size: i32) -> u32;
-  fn SendMessageTimeoutW(
-    window: WindowHandle,
-    message: u32,
-    w_param: usize,
-    l_param: isize,
-    flags: u32,
-    timeout: u32,
-    result: *mut usize,
-  ) -> usize;
 }
 
 #[cfg(windows)]
@@ -160,10 +161,7 @@ const VK_CONTROL: u16 = 0x11;
 const VK_V: u16 = 0x56;
 #[cfg(windows)]
 const KEYEVENTF_KEYUP: u32 = 0x0002;
-#[cfg(windows)]
-const WM_PASTE: u32 = 0x0302;
-#[cfg(windows)]
-const SMTO_ABORTIFHUNG: u32 = 0x0002;
+const INVALID_CARET_COORDINATE: i32 = i32::MIN;
 
 #[derive(Clone)]
 struct AppRuntime {
@@ -514,6 +512,18 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
     }
   }
 
+  if settings.paste_after_copy {
+    let target = runtime.paste_target.lock().ok().and_then(|mut value| value.take());
+    if let Some(target) = target {
+      // Paste as soon as the clipboard is ready. Copy-count persistence can be expensive for image-heavy stores.
+      thread::spawn(move || {
+        if let Err(error) = paste_to_target(&target) {
+          eprintln!("LightClip automatic paste failed: {error:#}");
+        }
+      });
+    }
+  }
+
   let history_update = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
     match store.touch_copied_item(&id) {
@@ -526,17 +536,6 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
   };
   if let Some(update) = history_update {
     emit_history_item_upserted(&app, update);
-  }
-
-  if settings.paste_after_copy {
-    let target = runtime.paste_target.lock().ok().and_then(|mut value| value.take());
-    if let Some(target) = target {
-      thread::spawn(move || {
-        if let Err(error) = paste_to_target(&target) {
-          eprintln!("LightClip automatic paste failed: {error:#}");
-        }
-      });
-    }
   }
 
   ok(item)
@@ -686,11 +685,25 @@ fn optimize_storage(app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandRe
 
 #[tauri::command]
 fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<AppSettings> {
-  let (result, previous_shortcut, previous_interface_mode) = {
+  let requested_interface_mode = settings.interface_mode.clone();
+  if let Some(interface_mode) = requested_interface_mode.as_deref() {
+    let current_interface_mode = runtime
+      .store
+      .lock()
+      .map(|store| store.state.settings.interface_mode.clone())
+      .unwrap_or_else(|_| "standard".to_string());
+    if interface_mode != current_interface_mode {
+      if let Some(window) = app.get_webview_window("main") {
+        let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
+        // Resize the live WebView before compressing a large history store so mode changes feel immediate.
+        let _ = configure_panel_window(&window, target.as_deref(), interface_mode);
+      }
+    }
+  }
+  let (result, previous_shortcut) = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
     let previous_shortcut = store.state.settings.global_shortcut.clone();
-    let previous_interface_mode = store.state.settings.interface_mode.clone();
-    (store.update_settings(settings), previous_shortcut, previous_interface_mode)
+    (store.update_settings(settings), previous_shortcut)
   };
   match result {
     Ok(settings) => {
@@ -708,20 +721,6 @@ fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_
         }
       }
       apply_launch_at_login(settings.launch_at_login);
-      if settings.interface_mode != previous_interface_mode {
-        if let Some(window) = app.get_webview_window("main") {
-          let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
-          let was_visible = window.is_visible().unwrap_or(false);
-          if was_visible {
-            let _ = window.hide();
-          }
-          let _ = configure_panel_window(&window, target.as_deref(), &settings.interface_mode);
-          if was_visible {
-            let _ = window.show();
-            let _ = window.set_focus();
-          }
-        }
-      }
       broadcast_state(&app, &runtime);
       ok(settings)
     }
@@ -1591,8 +1590,7 @@ fn calculate_panel_bounds_near_caret(
   };
 
   if let Some(caret) = caret.filter(|rect| {
-    rect.right >= rect.left
-      && rect.bottom >= rect.top
+    is_caret_rect_usable(*rect)
       && rect.left >= work.left
       && rect.left < work.right
       && rect.top >= work.top
@@ -1633,6 +1631,13 @@ fn calculate_panel_bounds_near_caret(
   PanelBounds { x, y, width, height }
 }
 
+/// Returns whether a captured caret has a real screen position and non-zero height.
+fn is_caret_rect_usable(rect: NativeRect) -> bool {
+  rect.left != INVALID_CARET_COORDINATE
+    && rect.right >= rect.left
+    && rect.bottom > rect.top
+}
+
 /// Applies the persisted panel layout on the monitor nearest the captured foreground window.
 fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interface_mode: &str) -> anyhow::Result<()> {
   #[cfg(windows)]
@@ -1643,7 +1648,14 @@ fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interfac
       .map(|(window, _, _)| *window as WindowHandle)
       .filter(|window| unsafe { IsWindow(*window) } != 0)
       .unwrap_or_else(|| unsafe { GetForegroundWindow() });
-    let monitor = unsafe { MonitorFromWindow(target_window, MONITOR_DEFAULT_TO_NEAREST) };
+    let caret = parsed_target.as_ref().map(|(_, _, caret)| *caret).filter(|caret| is_caret_rect_usable(*caret));
+    let monitor = caret
+      .map(|caret| NativePoint {
+        x: caret.left + (caret.right - caret.left) / 2,
+        y: caret.top + (caret.bottom - caret.top) / 2,
+      })
+      .map(|point| unsafe { MonitorFromPoint(point, MONITOR_DEFAULT_TO_NEAREST) })
+      .unwrap_or_else(|| unsafe { MonitorFromWindow(target_window, MONITOR_DEFAULT_TO_NEAREST) });
     if monitor.is_null() {
       anyhow::bail!("未找到目标显示器");
     }
@@ -1657,7 +1669,6 @@ fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interfac
       anyhow::bail!("读取目标显示器信息失败");
     }
     let dpi = unsafe { GetDpiForWindow(target_window) };
-    let caret = parsed_target.map(|(_, _, caret)| caret);
     let bounds = calculate_panel_bounds_near_caret(monitor_info.work, dpi, interface_mode, caret);
     let minimum = if interface_mode == "compact" {
       PhysicalSize::new(340, 420)
@@ -1878,23 +1889,55 @@ fn capture_paste_target() -> anyhow::Result<String> {
         bottom: 0,
       },
     };
-    if thread_id != 0 {
-      let _ = unsafe { GetGUIThreadInfo(thread_id, &mut info) };
-    }
+    let captured_gui_info = thread_id != 0 && unsafe { GetGUIThreadInfo(thread_id, &mut info) } != 0;
+    let caret_rect = if captured_gui_info {
+      caret_rect_to_screen(info.caret_window, info.caret_rect).unwrap_or_else(invalid_caret_rect)
+    } else {
+      invalid_caret_rect()
+    };
 
     return Ok(format!(
       "{};{};{};{};{};{}",
       foreground_window as isize,
       info.focused_window as isize,
-      info.caret_rect.left,
-      info.caret_rect.top,
-      info.caret_rect.right,
-      info.caret_rect.bottom
+      caret_rect.left,
+      caret_rect.top,
+      caret_rect.right,
+      caret_rect.bottom
     ));
   }
 
   #[cfg(not(windows))]
   anyhow::bail!("仅 Windows 支持目标窗口捕获")
+}
+
+#[cfg(windows)]
+fn caret_rect_to_screen(window: WindowHandle, rect: NativeRect) -> Option<NativeRect> {
+  if window.is_null() || unsafe { IsWindow(window) } == 0 || rect.bottom <= rect.top || rect.right < rect.left {
+    return None;
+  }
+
+  let mut top_left = NativePoint { x: rect.left, y: rect.top };
+  let mut bottom_right = NativePoint { x: rect.right, y: rect.bottom };
+  if unsafe { ClientToScreen(window, &mut top_left) } == 0 || unsafe { ClientToScreen(window, &mut bottom_right) } == 0 {
+    return None;
+  }
+
+  Some(NativeRect {
+    left: top_left.x,
+    top: top_left.y,
+    right: bottom_right.x,
+    bottom: bottom_right.y,
+  })
+}
+
+fn invalid_caret_rect() -> NativeRect {
+  NativeRect {
+    left: INVALID_CARET_COORDINATE,
+    top: INVALID_CARET_COORDINATE,
+    right: INVALID_CARET_COORDINATE,
+    bottom: INVALID_CARET_COORDINATE,
+  }
 }
 
 fn paste_to_target(target: &str) -> anyhow::Result<()> {
@@ -1912,7 +1955,12 @@ fn paste_to_target(target: &str) -> anyhow::Result<()> {
     thread::sleep(Duration::from_millis(24));
 
     let current_thread = unsafe { GetCurrentThreadId() };
-    let target_thread = unsafe { GetWindowThreadProcessId(window, std::ptr::null_mut()) };
+    let focus_target = if !focused_window.is_null() && unsafe { IsWindow(focused_window) } != 0 {
+      focused_window
+    } else {
+      window
+    };
+    let target_thread = unsafe { GetWindowThreadProcessId(focus_target, std::ptr::null_mut()) };
     let foreground_window = unsafe { GetForegroundWindow() };
     let foreground_thread = unsafe { GetWindowThreadProcessId(foreground_window, std::ptr::null_mut()) };
     let attached_target = target_thread != 0
@@ -1937,16 +1985,11 @@ fn paste_to_target(target: &str) -> anyhow::Result<()> {
             SetForegroundWindow(window);
           }
         }
-        if !focused_window.is_null() && unsafe { IsWindow(focused_window) } != 0 {
-          unsafe { SetFocus(focused_window) };
-        }
+        unsafe { SetFocus(focus_target) };
         thread::sleep(Duration::from_millis(16));
         if unsafe { GetForegroundWindow() } == window {
-          if !focused_window.is_null() && unsafe { IsWindow(focused_window) } != 0 {
-            if send_wm_paste(focused_window) {
-              return Ok(());
-            }
-          }
+          // Modern Chromium, WinUI and custom controls can acknowledge WM_PASTE without inserting text.
+          // SendInput mirrors normal keyboard paste and works consistently once the original focus is restored.
           send_ctrl_v()?;
           return Ok(());
         }
@@ -1990,22 +2033,6 @@ fn parse_paste_target(target: &str) -> anyhow::Result<(isize, isize, NativeRect)
     anyhow::bail!("无效的粘贴目标窗口")
   }
   Ok((window, focused_window, caret))
-}
-
-#[cfg(windows)]
-fn send_wm_paste(window: WindowHandle) -> bool {
-  let mut result = 0usize;
-  unsafe {
-    SendMessageTimeoutW(
-      window,
-      WM_PASTE,
-      0,
-      0,
-      SMTO_ABORTIFHUNG,
-      300,
-      &mut result,
-    ) != 0
-  }
 }
 
 #[cfg(windows)]

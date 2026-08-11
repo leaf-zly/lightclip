@@ -643,6 +643,7 @@ h1 {
 .history-list {
   display: grid;
   flex: 1 1 auto;
+  grid-auto-rows: max-content;
   min-width: 0;
   min-height: 0;
   align-content: start;
@@ -972,6 +973,28 @@ kbd {
   .footer {
     gap: 10px;
   }
+
+  .filter-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .filter-row > svg {
+    display: none;
+  }
+
+  .topbar .secondary-action {
+    display: none;
+  }
+
+  .list-toolbar .action-label {
+    display: none;
+  }
+
+  .list-toolbar .text-button {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
 }
 
 .filter-row {
@@ -1225,10 +1248,6 @@ kbd {
 }
 
 @media (max-width: 760px) {
-  .filter-row {
-    grid-template-columns: 1fr;
-  }
-
   .setting-actions,
   .toolbar-actions,
   .preview-actions {
@@ -1323,10 +1342,6 @@ kbd {
 }
 .spinning { animation: updater-spin 850ms linear infinite; }
 @keyframes updater-spin { to { transform: rotate(360deg); } }
-
-.shell.is-reflowing {
-  visibility: hidden;
-}
 
 /* Win+V-inspired compact panel */
 .shell.interface-compact .maximize-control,

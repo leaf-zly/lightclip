@@ -157,7 +157,6 @@ const timeFilter = ref<HistoryTimeFilter>('all')
 const selectedIndex = ref(0)
 const visibleLimit = ref(INITIAL_RENDER_LIMIT)
 const showSettings = ref(false)
-const isReflowingMode = ref(false)
 const previewItem = ref<ClipboardItem | null>(null)
 const toast = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
@@ -233,7 +232,6 @@ const shellClasses = computed(() => [
   `theme-${state.value.settings.themeAccent}`,
   `mode-${state.value.settings.themeMode}`,
   `interface-${state.value.settings.interfaceMode}`,
-  { 'is-reflowing': isReflowingMode.value },
 ])
 
 /**
@@ -300,7 +298,6 @@ async function copySelectedItem(): Promise<void> {
 }
 
 async function copyItem(item: ClipboardItem): Promise<void> {
-  void lightClip.hidePanel()
   const result = await lightClip.copyItem(item.id)
   if (!result.ok) {
     showToast(result.error ?? '复制失败')
@@ -464,9 +461,6 @@ async function closeWindow(): Promise<void> {
 async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
   const changingInterfaceMode = settings.interfaceMode !== undefined
     && settings.interfaceMode !== state.value.settings.interfaceMode
-  if (changingInterfaceMode) {
-    isReflowingMode.value = true
-  }
   const shouldApplyOptimisticTheme = isVisualSettingsUpdate(settings)
   if (shouldApplyOptimisticTheme) {
     // Theme changes should repaint immediately; the main process still persists and broadcasts the canonical state.
@@ -479,14 +473,16 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
     }
   }
 
+  if (changingInterfaceMode) {
+    // Let Vue paint the new layout before native persistence compresses a potentially large history file.
+    await nextTick()
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+  }
+
   const result = await lightClip.updateSettings(settings)
   if (!result.ok) {
     showToast(result.error ?? '设置保存失败')
     state.value = await lightClip.getState()
-  }
-  if (changingInterfaceMode) {
-    await nextTick()
-    isReflowingMode.value = false
   }
 }
 
@@ -1093,15 +1089,16 @@ function handleKeyboard(event: KeyboardEvent): void {
             <button
               class="text-button"
               type="button"
+              title="清理当前类型"
               :disabled="!(activeFilter === 'text' || activeFilter === 'image' || activeFilter === 'file')"
               @click="clearActiveType"
             >
               <Eraser :size="16" />
-              清理当前类型
+              <span class="action-label">清理当前类型</span>
             </button>
-            <button class="text-button" type="button" :disabled="regularCount === 0" @click="clearHistory">
+            <button class="text-button" type="button" title="清空未固定" :disabled="regularCount === 0" @click="clearHistory">
               <Trash2 :size="16" />
-              清空未固定
+              <span class="action-label">清空未固定</span>
             </button>
           </div>
         </div>
