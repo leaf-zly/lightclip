@@ -6,6 +6,25 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.2.4] - 2026-08-11
+
+### Fixed
+
+- Retries interactive signed update checks after transient network and timeout failures using a longer second attempt.
+- Keeps signature, metadata, and permission failures fail-fast instead of masking them as connection instability.
+- Improves error-text contrast in dark and system-dark themes.
+
+### Improved
+
+- Shows update-check attempt progress and promotes browser download as the primary recovery action.
+- Uses a longer single timeout for silent background checks without creating repeated background traffic.
+
+### Verified
+
+- Seven updater utility tests cover retry recovery and non-retryable security failures.
+- Dark updater error layout passes at 390x560 with no horizontal overflow and all recovery actions on one row.
+- Type checking, renderer production build, and GitHub-hosted Windows native tests pass.
+
 ## [2.2.3] - 2026-08-11
 
 ### Fixed

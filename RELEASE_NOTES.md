@@ -1,30 +1,29 @@
-# LightClip v2.2.3
+# LightClip v2.2.4
 
-This maintenance release improves panel placement for real-world Windows input controls and refreshes the signed-update experience.
+This maintenance release makes signed update checks more tolerant of slow or intermittent GitHub connections.
 
 ## Fixed
 
-- Rejects stale caret coordinates that fall outside the captured target window.
-- Falls back to the mouse position captured when the shortcut is pressed when Chromium, WPF, WinUI, or a custom input does not expose a trustworthy system caret.
-- Keeps the standard panel beside centered inputs on common 1366px laptop displays instead of covering the anchor.
-- Scales native minimum panel dimensions consistently with the target monitor DPI.
+- Replaces the previous single three-second request with a six-second fast attempt and a twenty-second recovery attempt for interactive checks.
+- Retries only transient network, DNS, connection, and timeout failures.
+- Keeps signature, metadata, and permission failures fail-fast so update security errors remain visible.
+- Improves updater error-text contrast in dark and system-dark themes.
 
 ## Improved
 
-- Presents update status, current and available versions, and release notes in a clearer responsive dialog.
-- Renders release notes as safe structured text instead of displaying raw Markdown.
-- Keeps long notes scrollable while the update actions remain available.
-- Adds Escape handling, initial keyboard focus, accessible live status, and copy-link confirmation.
+- Shows which update-check attempt is currently running.
+- Promotes browser download as the primary recovery action when the signed endpoint remains unavailable.
+- Uses one eight-second request for silent background checks without repeated background network traffic.
 
 ## Verification
 
-- Five updater utility tests, TypeScript and Vue type checking, and the renderer production build pass.
-- GitHub-hosted Windows native release tests cover stale-caret fallback and centered-anchor placement.
-- Update-dialog visual checks pass at 860x680 and 390x560 without horizontal overflow or overlapping controls.
+- Seven updater utility tests cover retry recovery and non-retryable security failures.
+- The dark updater error layout passes at 390x560 without horizontal overflow; all three recovery actions remain on one row.
+- TypeScript and Vue type checking, renderer production build, and GitHub-hosted Windows native tests pass.
 
 ## Downloads
 
-- LightClip_2.2.3_x64-setup.exe: recommended current-user installer.
+- LightClip_2.2.4_x64-setup.exe: recommended current-user installer.
 - LightClip-portable-x64.exe: standalone application binary.
 
 Updater artifacts are signed with the Tauri updater key. Windows executables are not Authenticode-signed, so SmartScreen or third-party antivirus products may still show an unknown-publisher warning.
