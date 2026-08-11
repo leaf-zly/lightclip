@@ -1580,7 +1580,7 @@ fn calculate_panel_bounds_near_caret(
   let (logical_width, logical_height) = if interface_mode == "compact" { (390.0, 560.0) } else { (860.0, 680.0) };
   let work_width = (work.right - work.left).max(1) as u32;
   let work_height = (work.bottom - work.top).max(1) as u32;
-  let width = ((logical_width * scale).round() as u32).min(work_width);
+  let mut width = ((logical_width * scale).round() as u32).min(work_width);
   let height = ((logical_height * scale).round() as u32).min(work_height);
   let margin = (12.0 * scale).round() as i32;
   let fallback_margin = if interface_mode == "compact" {
@@ -1596,6 +1596,16 @@ fn calculate_panel_bounds_near_caret(
       && rect.top >= work.top
       && rect.top < work.bottom
   }) {
+    let minimum_width = if interface_mode == "compact" { 340 } else { 720 }.min(work_width);
+    let right_space = (work.right - caret.right - margin).max(0) as u32;
+    let left_space = (caret.left - margin - work.left).max(0) as u32;
+    if right_space < width && left_space < width {
+      // Prefer shrinking to a usable one-sided width instead of covering the focused caret.
+      let available_side = right_space.max(left_space);
+      if available_side >= minimum_width {
+        width = available_side.min(width);
+      }
+    }
     let right_x = caret.right + margin;
     let left_x = caret.left - width as i32 - margin;
     let x = if right_x + width as i32 <= work.right {
@@ -2759,6 +2769,17 @@ mod tests {
     let lower_right = NativeRect { left: -100, top: 900, right: -80, bottom: 924 };
     let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(lower_right));
     assert_eq!(bounds, PanelBounds { x: -972, y: 208, width: 860, height: 680 });
+  }
+
+  #[test]
+  fn standard_panel_shrinks_to_avoid_covering_a_caret_on_narrow_displays() {
+    let work = NativeRect { left: 0, top: 0, right: 1024, bottom: 768 };
+    let caret = NativeRect { left: 272, top: 330, right: 274, bottom: 354 };
+    let bounds = calculate_panel_bounds_near_caret(work, 96, "standard", Some(caret));
+
+    assert_eq!(bounds.width, 738);
+    assert_eq!(bounds.x, 286);
+    assert!(bounds.x > caret.right);
   }
 
   #[test]

@@ -223,6 +223,9 @@ try {
   $horizontalDistance = [Math]::Max(0, [Math]::Max($panelBounds[0] - $caretPoint.X, $caretPoint.X - $panelBounds[2]))
   $verticalDistance = [Math]::Max(0, [Math]::Max($panelBounds[1] - $caretPoint.Y, $caretPoint.Y - $panelBounds[3]))
   $caretDistance = [Math]::Sqrt(($horizontalDistance * $horizontalDistance) + ($verticalDistance * $verticalDistance))
+  if ($caretDistance -lt 1) {
+    throw 'LightClip covered the focused caret instead of opening beside it.'
+  }
   if ($caretDistance -gt 96) {
     throw "LightClip opened too far from the focused caret: $([Math]::Round($caretDistance)) px."
   }
