@@ -238,6 +238,7 @@ while ($true) {
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let clipboardTimer: NodeJS.Timeout | null = null
+let clipboardProcessing = false
 let lastClipboardSignature = ''
 let activeGlobalShortcut = ''
 let isQuitting = false
@@ -247,6 +248,7 @@ let pasteHelperScriptPath: string | null = null
 let pasteHelperStdoutBuffer = ''
 let pasteHelperRequestId = 0
 let pasteTargetWindowHandle: string | null = null
+let pasteTargetCapturePromise: Promise<void> | null = null
 const pasteHelperRequests = new Map<number, PasteHelperRequest>()
 
 function debugPasteFlow(event: string, details: Record<string, unknown> = {}): void {
@@ -384,7 +386,23 @@ function createWindow(): BrowserWindow {
  * Shows the quick panel near the active display, similar to a launcher.
  */
 async function showPanel(): Promise<void> {
-  await rememberPasteTargetWindow()
+  // Capture the previous foreground target in the background so the hotkey can
+  // show the already-created window immediately. A pending capture is awaited
+  // only when the user actually selects an item for paste.
+  const capturePromise = rememberPasteTargetWindow()
+  pasteTargetCapturePromise = capturePromise
+  void capturePromise.then(
+    () => {
+      if (pasteTargetCapturePromise === capturePromise) {
+        pasteTargetCapturePromise = null
+      }
+    },
+    () => {
+      if (pasteTargetCapturePromise === capturePromise) {
+        pasteTargetCapturePromise = null
+      }
+    },
+  )
   const window = createWindow()
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
@@ -542,15 +560,24 @@ function registerGlobalShortcut(accelerator: string): boolean {
 function startClipboardWatcher(): void {
   lastClipboardSignature = readClipboardSnapshot(store.getState().settings).signature
   clipboardTimer = setInterval(async () => {
+    if (clipboardProcessing) {
+      return
+    }
+
     const snapshot = readClipboardSnapshot(store.getState().settings)
     if (!snapshot.signature || snapshot.signature === lastClipboardSignature) {
       return
     }
 
     lastClipboardSignature = snapshot.signature
-    const recorded = await recordClipboardSnapshot(snapshot)
-    if (recorded) {
-      broadcastState()
+    clipboardProcessing = true
+    try {
+      const recorded = await recordClipboardSnapshot(snapshot)
+      if (recorded) {
+        broadcastHistoryItemUpsert(recorded)
+      }
+    } finally {
+      clipboardProcessing = false
     }
   }, 650)
 }
@@ -781,7 +808,7 @@ function isDevelopmentElectronStartupCommand(command: string): boolean {
   return normalized.includes('lightclip') && normalized.includes('node_modules') && normalized.includes('electron.exe')
 }
 
-async function updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
+async function updateSettings(settings: Partial<AppSettings>, notifyRenderer = true): Promise<AppSettings> {
   const previousSettings = store.getState().settings
   const requestedShortcut = typeof settings.globalShortcut === 'string' ? settings.globalShortcut.trim() : undefined
   const shortcutChanged = Boolean(requestedShortcut && requestedShortcut !== previousSettings.globalShortcut)
@@ -800,7 +827,9 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<AppSettin
     applyLaunchAtLogin(nextSettings.launchAtLogin)
     updateTrayMenu()
     syncPasteHelperProcess(nextSettings.pasteAfterCopy)
-    broadcastState()
+    if (notifyRenderer) {
+      broadcastState()
+    }
     return nextSettings
   } catch (error) {
     if (shortcutChanged && activeGlobalShortcut !== previousSettings.globalShortcut) {
@@ -852,6 +881,10 @@ ipcMain.handle(IPC_CHANNELS.copyItem, async (_event, id: string): Promise<Comman
 
   const settings = store.getState().settings
   const { pasteAfterCopy } = settings
+  const pendingTargetCapture = pasteAfterCopy ? pasteTargetCapturePromise : null
+  if (pendingTargetCapture) {
+    await pendingTargetCapture.catch(() => undefined)
+  }
   // Hide before clipboard writes, file-drop PowerShell work, or encrypted store persistence can block the visible path.
   hidePanel()
   const writeMetadata = writeItemToClipboard(item, settings)
@@ -922,11 +955,21 @@ function createSnapshotSignature(text: string, files: string[], image: Clipboard
 async function persistCopiedItemUsage(id: string): Promise<void> {
   // Copy counters are useful metadata, but saving them must never delay panel dismissal or paste delivery.
   try {
-    await store.touchCopiedItem(id)
-    broadcastState()
+    const item = await store.touchCopiedItem(id)
+    if (item) {
+      broadcastHistoryItemUpsert(item)
+    }
   } catch (error) {
     console.warn('Failed to persist copied item usage.', error)
   }
+}
+
+/** Sends one persisted history record without replacing the renderer's full store snapshot. */
+function broadcastHistoryItemUpsert(item: ClipboardItem): void {
+  mainWindow?.webContents.send(IPC_CHANNELS.historyItemUpserted, {
+    item,
+    storageBytes: store.getState().storageBytes,
+  })
 }
 
 /**
@@ -1428,7 +1471,7 @@ ipcMain.handle(
   IPC_CHANNELS.updateSettings,
   async (_event, settings: Partial<AppSettings>): Promise<CommandResult<AppSettings>> => {
     try {
-      const nextSettings = await updateSettings(settings)
+      const nextSettings = await updateSettings(settings, false)
       return { ok: true, data: nextSettings }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : '设置保存失败' }

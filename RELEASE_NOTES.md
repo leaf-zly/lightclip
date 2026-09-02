@@ -1,29 +1,23 @@
-# LightClip v2.2.4
+# LightClip v2.2.5
 
-This maintenance release makes signed update checks more tolerant of slow or intermittent GitHub connections.
+LightClip v2.2.5 focuses on fast panel interaction and reliable clipboard updates for large histories.
 
 ## Fixed
 
-- Replaces the previous single three-second request with a six-second fast attempt and a twenty-second recovery attempt for interactive checks.
-- Retries only transient network, DNS, connection, and timeout failures.
-- Keeps signature, metadata, and permission failures fail-fast so update security errors remain visible.
-- Improves updater error-text contrast in dark and system-dark themes.
-
-## Improved
-
-- Shows which update-check attempt is currently running.
-- Promotes browser download as the primary recovery action when the signed endpoint remains unavailable.
-- Uses one eight-second request for silent background checks without repeated background network traffic.
+- Make standard and compact layout switching immediate instead of waiting for native persistence and a full state repaint.
+- Avoid replacing the complete clipboard history snapshot when saving settings from the visible panel.
+- Send newly captured clipboard records and copy-count changes as incremental updates.
+- Prevent overlapping clipboard persistence tasks when clipboard changes arrive in quick succession.
+- Capture the previous foreground target asynchronously while opening the panel, then wait for that capture only when paste-after-copy is requested.
+- Improve paste-after-copy reliability when the helper process is still warming up.
 
 ## Verification
 
-- Seven updater utility tests cover retry recovery and non-retryable security failures.
-- The dark updater error layout passes at 390x560 without horizontal overflow; all three recovery actions remain on one row.
-- TypeScript and Vue type checking, renderer production build, and GitHub-hosted Windows native tests pass.
+- `pnpm check:sources`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm build:renderer`
 
 ## Downloads
 
-- LightClip_2.2.4_x64-setup.exe: recommended current-user installer.
-- LightClip-portable-x64.exe: standalone application binary.
-
-Updater artifacts are signed with the Tauri updater key. Windows executables are not Authenticode-signed, so SmartScreen or third-party antivirus products may still show an unknown-publisher warning.
+The Windows installer and portable executable are published on the GitHub Release page.

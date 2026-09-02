@@ -459,11 +459,9 @@ async function closeWindow(): Promise<void> {
 }
 
 async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
-  const changingInterfaceMode = settings.interfaceMode !== undefined
-    && settings.interfaceMode !== state.value.settings.interfaceMode
-  const shouldApplyOptimisticTheme = isVisualSettingsUpdate(settings)
-  if (shouldApplyOptimisticTheme) {
-    // Theme changes should repaint immediately; the main process still persists and broadcasts the canonical state.
+  const shouldApplyOptimisticSettings = isVisualSettingsUpdate(settings)
+  if (shouldApplyOptimisticSettings) {
+    // Apply visual settings in the renderer first; persistence must never block a layout repaint.
     state.value = {
       ...state.value,
       settings: {
@@ -473,16 +471,20 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
     }
   }
 
-  if (changingInterfaceMode) {
-    // Let Vue paint the new layout before native persistence compresses a potentially large history file.
-    await nextTick()
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
-  }
-
   const result = await lightClip.updateSettings(settings)
   if (!result.ok) {
     showToast(result.error ?? '设置保存失败')
     state.value = await lightClip.getState()
+    return
+  }
+
+  // Keep only the canonical settings from the response. Replacing the whole state
+  // here would make a mode toggle redraw every history item again.
+  if (result.data) {
+    state.value = {
+      ...state.value,
+      settings: result.data,
+    }
   }
 }
 

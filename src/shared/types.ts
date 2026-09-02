@@ -252,6 +252,7 @@ export const IPC_CHANNELS = {
   hidePanel: 'lightclip:hide-panel',
   quit: 'lightclip:quit',
   stateChanged: 'lightclip:state-changed',
+  historyItemUpserted: 'lightclip:history-item-upserted',
 } as const
 
 /**

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_CHANNELS, type AppState, type LightClipApi } from '../shared/types.js'
+import { IPC_CHANNELS, type AppState, type HistoryItemUpsert, type LightClipApi } from '../shared/types.js'
 
 const api: LightClipApi = {
   getState: () => ipcRenderer.invoke(IPC_CHANNELS.getState),
@@ -25,6 +25,11 @@ const api: LightClipApi = {
     const listener = (_event: Electron.IpcRendererEvent, state: AppState) => callback(state)
     ipcRenderer.on(IPC_CHANNELS.stateChanged, listener)
     return () => ipcRenderer.off(IPC_CHANNELS.stateChanged, listener)
+  },
+  onHistoryItemUpserted: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: HistoryItemUpsert) => callback(update)
+    ipcRenderer.on(IPC_CHANNELS.historyItemUpserted, listener)
+    return () => ipcRenderer.off(IPC_CHANNELS.historyItemUpserted, listener)
   },
 }
 
