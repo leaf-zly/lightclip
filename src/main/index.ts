@@ -411,12 +411,23 @@ async function showPanel(): Promise<void> {
   const display = screen.getDisplayNearestPoint(cursor)
   const bounds = display.workArea
   const size = window.getBounds()
+  const gap = 14
+  const preferredX = cursor.x + gap
+  const preferredY = cursor.y + gap
+  const x = Math.min(
+    Math.max(bounds.x + 8, preferredX),
+    bounds.x + bounds.width - size.width - 8,
+  )
+  const y = Math.min(
+    Math.max(bounds.y + 8, preferredY),
+    bounds.y + bounds.height - size.height - 8,
+  )
 
   window.setBounds({
     width: size.width,
     height: size.height,
-    x: Math.round(bounds.x + (bounds.width - size.width) / 2),
-    y: Math.round(bounds.y + Math.max(24, (bounds.height - size.height) * 0.18)),
+    x: Math.round(x),
+    y: Math.round(y),
   })
   window.show()
   window.focus()

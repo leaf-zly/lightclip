@@ -154,6 +154,7 @@ const state = shallowRef<AppState>({
   },
 })
 const query = ref('')
+const queryInput = ref('')
 const activeFilter = ref<HistoryFilterOption['id']>('all')
 const timeFilter = ref<HistoryTimeFilter>('all')
 const selectedIndex = ref(0)
@@ -170,6 +171,7 @@ let unsubscribeHistoryItem: (() => void) | null = null
 let unsubscribePasteStatus: (() => void) | null = null
 let clockTimer: number | null = null
 let toastTimer: number | null = null
+let searchTimer: number | null = null
 
 const filteredItems = computed(() =>
   state.value.items.filter((item) => {
@@ -273,6 +275,9 @@ onBeforeUnmount(() => {
   if (toastTimer) {
     window.clearTimeout(toastTimer)
   }
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+  }
 })
 
 /**
@@ -298,6 +303,20 @@ function applyHistoryItemUpsert(update: HistoryItemUpsert): void {
 watch([filteredItems, query, activeFilter], () => {
   visibleLimit.value = INITIAL_RENDER_LIMIT
   selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, filteredItems.value.length - 1))
+})
+
+/**
+ * Commits search text after a short idle period so large histories do not
+ * re-render once for every keystroke.
+ */
+watch(queryInput, (value) => {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+  }
+  searchTimer = window.setTimeout(() => {
+    query.value = value
+    searchTimer = null
+  }, 80)
 })
 
 async function focusSearch(): Promise<void> {
@@ -721,13 +740,13 @@ function handleKeyboard(event: KeyboardEvent): void {
         <Search :size="20" />
         <input
           ref="searchInput"
-          v-model="query"
+          v-model="queryInput"
           type="search"
           placeholder="搜索历史内容"
           autocomplete="off"
           spellcheck="false"
         />
-        <button v-if="query" class="icon-button ghost" type="button" title="清空搜索" @click="query = ''">
+          <button v-if="queryInput" class="icon-button ghost" type="button" title="清空搜索" @click="queryInput = ''">
           <X :size="18" />
         </button>
       </div>
