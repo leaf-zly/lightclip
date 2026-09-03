@@ -1,15 +1,20 @@
-# LightClip v2.2.5
+# LightClip v2.3.0
 
-LightClip v2.2.5 focuses on fast panel interaction and reliable clipboard updates for large histories.
+LightClip v2.3.0 improves large-history responsiveness, paste feedback, panel placement, and the online update experience.
 
-## Fixed
+## Added
 
-- Make standard and compact layout switching immediate instead of waiting for native persistence and a full state repaint.
-- Avoid replacing the complete clipboard history snapshot when saving settings from the visible panel.
-- Send newly captured clipboard records and copy-count changes as incremental updates.
-- Prevent overlapping clipboard persistence tasks when clipboard changes arrive in quick succession.
-- Capture the previous foreground target asynchronously while opening the panel, then wait for that capture only when paste-after-copy is requested.
-- Improve paste-after-copy reliability when the helper process is still warming up.
+- Recent-history filter and structured search qualifiers: `type:`, `from:`, and `is:pinned`.
+- Paste progress feedback with success and failure notifications.
+- Cursor-adjacent panel placement on the active monitor with edge collision handling.
+
+## Improved
+
+- Debounced history search to keep typing responsive with hundreds of records.
+- Immediate visual application of theme and layout settings.
+- Compact and standard panel styling, including responsive image history rows.
+- Update dialog hierarchy, release-note scrolling, progress feedback, and narrow-window behavior.
+- Incremental history updates avoid replacing the complete history snapshot after every copy.
 
 ## Verification
 
@@ -17,7 +22,8 @@ LightClip v2.2.5 focuses on fast panel interaction and reliable clipboard update
 - `pnpm typecheck`
 - `pnpm test`
 - `pnpm build:renderer`
+- `pnpm electron:build`
 
 ## Downloads
 
-The Windows installer and portable executable are published on the GitHub Release page.
+Windows installers and portable executables are published on the [GitHub Release page](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.0).
