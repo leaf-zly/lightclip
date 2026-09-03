@@ -93,8 +93,9 @@ function handleDialogKeydown(event: KeyboardEvent): void {
               <X v-else-if="status === 'error'" :size="24" />
               <Download v-else :size="24" />
             </span>
-            <div>
-              <strong v-if="update">发现新版本 v{{ update.version }}</strong>
+            <div class="updater-status-copy">
+              <span class="updater-eyebrow">{{ status === 'available' ? '准备更新' : status === 'error' ? '需要处理' : '更新服务' }}</span>
+              <strong v-if="update">发现新版本 <b>v{{ update.version }}</b></strong>
               <strong v-else-if="status === 'current'">当前已是最新版本</strong>
               <strong v-else-if="status === 'error'">检查更新失败</strong>
               <strong v-else>正在检查更新</strong>
@@ -105,11 +106,12 @@ function handleDialogKeydown(event: KeyboardEvent): void {
               <span v-else-if="status === 'current'">暂时没有需要安装的内容</span>
               <span v-else-if="status === 'error'">可以重试或在浏览器中下载安装包</span>
             </div>
+            <span v-if="update" class="updater-version-badge">v{{ update.version }}</span>
           </div>
 
           <div v-if="status === 'error'" class="updater-message is-error">{{ errorMessage }}</div>
 
-          <div v-else-if="update && hasReleaseNotes" class="updater-notes">
+          <div v-else-if="update && hasReleaseNotes" class="updater-notes updater-notes-scroll">
             <p v-for="paragraph in releaseNotes.summary" :key="paragraph" class="updater-summary">{{ paragraph }}</p>
             <section v-for="section in releaseNotes.sections" :key="section.title" class="updater-notes-section">
               <h3>{{ section.title }}</h3>

@@ -1396,6 +1396,36 @@ kbd {
   font-size: 12px;
 }
 
+
+.updater-status-copy {
+  min-width: 0;
+}
+
+.updater-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.updater-status-copy strong b {
+  color: var(--accent-strong);
+  font-weight: 750;
+}
+
+.updater-version-badge {
+  align-self: start;
+  padding: 5px 8px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .updater-state-icon {
   display: grid;
   width: 42px;
