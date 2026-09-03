@@ -1590,3 +1590,7 @@ kbd {
 .shell.interface-compact .image-item-copy {
   grid-column: auto;
 }
+
+.paste-toast {
+  border-color: var(--accent);
+}

@@ -140,6 +140,15 @@ export interface AppState {
 /**
  * Incremental history update emitted after one clipboard record is inserted or refreshed.
  */
+/** Status emitted while a selected history item is being pasted into the previous foreground app. */
+export interface PasteStatusUpdate {
+  /** Current paste operation phase. */
+  status: 'started' | 'success' | 'failed'
+  /** Optional user-safe detail for the status toast. */
+  message?: string
+}
+
+/** Incremental history update emitted after one clipboard record is inserted or refreshed. */
 export interface HistoryItemUpsert {
   /** The canonical persisted record after capture or copy-count updates. */
   item: ClipboardItem
@@ -253,6 +262,7 @@ export const IPC_CHANNELS = {
   quit: 'lightclip:quit',
   stateChanged: 'lightclip:state-changed',
   historyItemUpserted: 'lightclip:history-item-upserted',
+  pasteStatus: 'lightclip:paste-status',
 } as const
 
 /**
@@ -301,4 +311,6 @@ export interface LightClipApi {
   onStateChanged: (callback: (state: AppState) => void) => () => void
   /** Subscribes to lightweight single-record updates when supported by the runtime. */
   onHistoryItemUpserted?: (callback: (update: HistoryItemUpsert) => void) => () => void
+  /** Subscribes to paste delivery status updates. */
+  onPasteStatus?: (callback: (update: PasteStatusUpdate) => void) => () => void
 }

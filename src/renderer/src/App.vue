@@ -43,6 +43,7 @@ import type {
   ClipboardItem,
   ClipboardItemKind,
   HistoryItemUpsert,
+  PasteStatusUpdate,
 } from '../../shared/types'
 import AppUpdater from './components/AppUpdater.vue'
 import { getLightClipApi } from './runtime'
@@ -160,11 +161,13 @@ const visibleLimit = ref(INITIAL_RENDER_LIMIT)
 const showSettings = ref(false)
 const previewItem = ref<ClipboardItem | null>(null)
 const toast = ref('')
+const pasteStatus = ref<PasteStatusUpdate['status'] | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 const now = ref(Date.now())
 
 let unsubscribeState: (() => void) | null = null
 let unsubscribeHistoryItem: (() => void) | null = null
+let unsubscribePasteStatus: (() => void) | null = null
 let clockTimer: number | null = null
 let toastTimer: number | null = null
 
@@ -248,6 +251,12 @@ onMounted(async () => {
     state.value = nextState
   })
   unsubscribeHistoryItem = lightClip.onHistoryItemUpserted?.(applyHistoryItemUpsert) ?? null
+  unsubscribePasteStatus = lightClip.onPasteStatus?.((update) => {
+    pasteStatus.value = update.status
+    if (update.message) {
+      showToast(update.message)
+    }
+  }) ?? null
   clockTimer = window.setInterval(() => {
     now.value = Date.now()
   }, 30_000)
@@ -257,6 +266,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unsubscribeState?.()
   unsubscribeHistoryItem?.()
+  unsubscribePasteStatus?.()
   if (clockTimer) {
     window.clearInterval(clockTimer)
   }
@@ -1244,7 +1254,8 @@ function handleKeyboard(event: KeyboardEvent): void {
     </transition>
 
     <transition name="toast">
-      <div v-if="toast" class="toast">
+      <div v-if="pasteStatus === 'started'" class="toast paste-toast">正在粘贴…</div>
+      <div v-else-if="toast" class="toast">
         <Check :size="16" />
         {{ toast }}
       </div>

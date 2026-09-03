@@ -187,6 +187,9 @@ function Invoke-LightClipPaste {
   param([string] $WindowHandle)
   Invoke-LightClipActivateWindow $WindowHandle
   Start-Sleep -Milliseconds 120
+if ([string]::IsNullOrWhiteSpace($WindowHandle)) {
+    $WindowHandle = [LightClip.NativeMethods]::GetForegroundWindow().ToInt64().ToString()
+  }
   [System.Windows.Forms.SendKeys]::SendWait('^v')
 }
 
@@ -964,6 +967,10 @@ async function persistCopiedItemUsage(id: string): Promise<void> {
   }
 }
 
+/** Emits a paste result without exposing clipboard contents to the renderer or logs. */
+function broadcastPasteStatus(update: { status: 'started' | 'success' | 'failed'; message?: string }): void {
+  mainWindow?.webContents.send(IPC_CHANNELS.pasteStatus, update)
+}
 /** Sends one persisted history record without replacing the renderer's full store snapshot. */
 function broadcastHistoryItemUpsert(item: ClipboardItem): void {
   mainWindow?.webContents.send(IPC_CHANNELS.historyItemUpserted, {
@@ -1014,6 +1021,7 @@ async function rememberPasteTargetWindow(): Promise<void> {
 }
 
 async function sendPasteCommandToForegroundApp(): Promise<void> {
+  broadcastPasteStatus({ status: 'started' })
   const targetWindowHandle = pasteTargetWindowHandle
   pasteTargetWindowHandle = null
 
@@ -1021,15 +1029,19 @@ async function sendPasteCommandToForegroundApp(): Promise<void> {
     debugPasteFlow('paste:start', { targetWindowHandle })
     await sendPasteHelperCommand('paste', targetWindowHandle ?? '', 1500)
     debugPasteFlow('paste:done', { targetWindowHandle })
+    broadcastPasteStatus({ status: 'success', message: '已粘贴到前台应用' })
   } catch (error) {
     debugPasteFlow('paste:error', { targetWindowHandle, error: error instanceof Error ? error.message : String(error) })
     console.warn('Failed to send paste command through the warm helper.', error)
-    await runOneShotPasteHelper(targetWindowHandle).catch((fallbackError) => {
+    await runOneShotPasteHelper(targetWindowHandle).then(() => {
+      broadcastPasteStatus({ status: 'success', message: '已粘贴到前台应用' })
+    }).catch((fallbackError) => {
       debugPasteFlow('paste:fallback-error', {
         targetWindowHandle,
         error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
       })
       console.warn('Failed to paste into foreground app.', fallbackError)
+      broadcastPasteStatus({ status: 'failed', message: '未能粘贴到前台应用' })
     })
   }
 }
