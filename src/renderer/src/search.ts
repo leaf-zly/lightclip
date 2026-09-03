@@ -4,17 +4,38 @@ import type { ClipboardItem } from '../../shared/types'
 export type HistoryTimeFilter = 'all' | 'today' | 'week' | 'month'
 
 /**
- * Matches all quoted or whitespace-separated terms against searchable item content.
- * Quoted terms preserve spaces, allowing exact multi-word snippet searches.
+ * Matches content and structured qualifiers against one clipboard item.
+ * Supported qualifiers are `type:text|image|file`, `from:today|week|month`, and `is:pinned`.
+ *
+ * @param item Clipboard record to inspect.
+ * @param query User-entered content and qualifier expression.
+ * @param now Reference timestamp used by relative date qualifiers.
+ * @returns Whether every query term matches the item.
  */
-export function matchesAdvancedQuery(item: ClipboardItem, query: string): boolean {
+export function matchesAdvancedQuery(item: ClipboardItem, query: string, now = Date.now()): boolean {
   const terms = Array.from(query.matchAll(/"([^"]+)"|(\S+)/g), (match) => (match[1] || match[2]).toLocaleLowerCase())
   if (!terms.length) {
     return true
   }
 
   const searchable = getSearchableText(item).toLocaleLowerCase()
-  return terms.every((term) => searchable.includes(term))
+  return terms.every((term) => {
+    const typeMatch = term.match(/^type:(text|image|file)$/)
+    if (typeMatch) {
+      return item.kind === typeMatch[1]
+    }
+
+    const fromMatch = term.match(/^from:(today|week|month)$/)
+    if (fromMatch) {
+      return matchesTimeFilter(item, fromMatch[1] as HistoryTimeFilter, now)
+    }
+
+    if (term === 'is:pinned') {
+      return item.pinned
+    }
+
+    return searchable.includes(term)
+  })
 }
 
 /** Returns whether an item falls inside the selected relative time window. */

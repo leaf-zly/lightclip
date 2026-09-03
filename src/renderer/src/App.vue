@@ -82,7 +82,7 @@ interface InterfaceModeOption {
 /** History filter displayed in the list toolbar. */
 interface HistoryFilterOption {
   /** Stable filter id used by renderer state. */
-  id: 'all' | 'pinned' | ClipboardItemKind
+  id: 'all' | 'pinned' | 'recent' | ClipboardItemKind
   /** Human-readable toolbar label. */
   label: string
 }
@@ -114,6 +114,7 @@ const historyFilters: readonly HistoryFilterOption[] = [
   { id: 'image', label: '图片' },
   { id: 'file', label: '文件' },
   { id: 'pinned', label: '片段' },
+  { id: 'recent', label: '最近使用' },
 ]
 
 const state = shallowRef<AppState>({
@@ -169,7 +170,7 @@ let toastTimer: number | null = null
 
 const filteredItems = computed(() =>
   state.value.items.filter((item) => {
-    if (!matchesAdvancedQuery(item, query.value) || !matchesTimeFilter(item, timeFilter.value, now.value)) {
+    if (!matchesAdvancedQuery(item, query.value, now.value) || !matchesTimeFilter(item, timeFilter.value, now.value)) {
       return false
     }
 
@@ -179,6 +180,10 @@ const filteredItems = computed(() =>
 
     if (activeFilter.value === 'pinned') {
       return item.pinned
+    }
+
+    if (activeFilter.value === 'recent') {
+      return item.copyCount > 0
     }
 
     return item.kind === activeFilter.value
@@ -543,6 +548,10 @@ function filterCount(filter: HistoryFilterOption['id']): number {
 
   if (filter === 'pinned') {
     return pinnedCount.value
+  }
+
+  if (filter === 'recent') {
+    return state.value.items.filter((item) => item.copyCount > 0).length
   }
 
   return typeCounts.value[filter]
