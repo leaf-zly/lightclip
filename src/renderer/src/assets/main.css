@@ -666,6 +666,9 @@ h1 {
 }
 
 .history-item {
+  /* Keep off-screen cards out of the render and paint pipeline for large histories. */
+  content-visibility: auto;
+  contain-intrinsic-size: 78px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -692,6 +695,7 @@ h1 {
 }
 
 .history-item-image {
+  contain-intrinsic-size: 134px;
   min-height: 134px;
   align-items: stretch;
   padding: 10px 12px;

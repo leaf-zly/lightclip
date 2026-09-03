@@ -90,8 +90,8 @@ interface HistoryFilterOption {
 const lightClip = getLightClipApi()
 const DEFAULT_SHORTCUT = 'Alt+V'
 const DEFAULT_PAUSE_MINUTES = 15
-const INITIAL_RENDER_LIMIT = 120
-const RENDER_LIMIT_STEP = 80
+const INITIAL_RENDER_LIMIT = 60
+const RENDER_LIMIT_STEP = 60
 const themeAccents: readonly ThemeAccentOption[] = [
   { id: 'mint', label: '薄荷绿', color: '#20b486' },
   { id: 'blue', label: '湖蓝', color: '#3278d7' },
