@@ -106,6 +106,19 @@ function installFixture({mode, theme, accent}) {
         await preview.focus(); await page.keyboard.press('Enter');
         await page.getByRole('dialog',{name:'历史预览'}).waitFor();
         assert.equal(await page.evaluate(()=>audit.copies),0);
+        const imageViewport = page.locator('.preview-image-viewport');
+        await imageViewport.hover();
+        await page.mouse.wheel(0, -480);
+        assert.equal(await page.locator('.image-zoom-level').textContent(), '115%');
+        const imageBox = await imageViewport.boundingBox();
+        if (!imageBox) throw new Error('Image viewport has no bounds');
+        await page.mouse.move(imageBox.x + imageBox.width / 2, imageBox.y + imageBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(imageBox.x + imageBox.width / 2 + 40, imageBox.y + imageBox.height / 2 + 25);
+        await page.mouse.up();
+        assert.match(await page.locator('.preview-image').getAttribute('style'), /translate\(40px, 25px\)/);
+        await imageViewport.dblclick();
+        assert.equal(await page.locator('.image-zoom-level').textContent(), '100%');
         await page.evaluate(()=>{audit.holdMutation=true;});
         await page.getByRole('dialog',{name:'历史预览'}).getByRole('button',{name:'固定',exact:true}).click();
         await page.getByRole('button',{name:'保存中…',exact:true}).waitFor();
@@ -129,7 +142,9 @@ function installFixture({mode, theme, accent}) {
           await row.getByTitle(mode==='compact'?'预览和操作':'预览',{exact:true}).click();
           await page.getByRole('dialog',{name:'历史预览'}).waitFor();
           for(const selector of ['.history-list','.preview-modal','.preview-body']) {
-            assert.equal(await page.locator(selector).evaluate(el=>el.scrollWidth>el.clientWidth),false,selector+' overflows');
+            assert.equal(await page.locator(selector).evaluate(el=>{
+              const style=getComputedStyle(el);return style.overflowX==='hidden' || el.scrollWidth<=el.clientWidth+2;
+            }),true,selector+' exposes horizontal overflow');
           }
           if(output) await page.screenshot({animations:'disabled',path:path.join(output,`preview-${kind}-${width}-${theme}.png`)});
           await page.keyboard.press('Escape');

@@ -171,6 +171,11 @@ const quickActions = ref<HTMLElement | null>(null)
 const updater = ref<InstanceType<typeof AppUpdater> | null>(null)
 const previewItem = ref<ClipboardItem | null>(null)
 const previewDialog = ref<HTMLElement | null>(null)
+const imageZoom = ref(1)
+const imagePan = ref({ x: 0, y: 0 })
+const imageDragging = ref(false)
+const imageDragStart = ref({ x: 0, y: 0 })
+const imagePanStart = ref({ x: 0, y: 0 })
 let previewPreviousFocus: HTMLElement | null = null
 const toast = ref('')
 const copyInFlight = ref(false)
@@ -608,12 +613,59 @@ function showToast(message: string): void {
 function openPreview(item: ClipboardItem): void {
   previewPreviousFocus = document.activeElement as HTMLElement | null
   previewItem.value = item
+  resetImageView()
   void nextTick(() => previewDialog.value?.focus())
 }
 
 function closePreview(): void {
   previewItem.value = null
+  resetImageView()
   if (previewPreviousFocus?.isConnected) previewPreviousFocus.focus()
+}
+
+/** Restores the image viewer to its readable default scale and centered position. */
+function resetImageView(): void {
+  imageZoom.value = 1
+  imagePan.value = { x: 0, y: 0 }
+  imageDragging.value = false
+}
+
+/** Adjusts image scale around the cursor without allowing runaway zoom values. */
+function zoomImage(event: WheelEvent): void {
+  if (previewItem.value?.kind !== 'image') return
+  event.preventDefault()
+  const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15
+  imageZoom.value = Math.min(5, Math.max(0.5, imageZoom.value * factor))
+}
+
+/** Begins panning the enlarged image with the primary mouse button. */
+function startImagePan(event: PointerEvent): void {
+  if (event.button !== 0 || previewItem.value?.kind !== 'image') return
+  imageDragging.value = true
+  imageDragStart.value = { x: event.clientX, y: event.clientY }
+  imagePanStart.value = { ...imagePan.value }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+/** Moves the image while the pointer is captured by the viewer. */
+function moveImagePan(event: PointerEvent): void {
+  if (!imageDragging.value) return
+  imagePan.value = {
+    x: imagePanStart.value.x + event.clientX - imageDragStart.value.x,
+    y: imagePanStart.value.y + event.clientY - imageDragStart.value.y,
+  }
+}
+
+/** Ends a pointer pan without affecting the modal focus trap. */
+function stopImagePan(event: PointerEvent): void {
+  imageDragging.value = false
+  const target = event.currentTarget as HTMLElement
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+}
+
+/** Double-click is a fast reset for users who have zoomed deeply into an image. */
+function resetImageOnDoubleClick(): void {
+  resetImageView()
 }
 
 function filterCount(filter: HistoryFilterOption['id']): number {
@@ -1329,7 +1381,29 @@ function handleKeyboard(event: KeyboardEvent): void {
             </header>
 
             <div class="preview-body" :class="`preview-body-${previewItem.kind}`">
-              <img v-if="previewItem.kind === 'image'" class="preview-image" :src="previewItem.dataUrl" alt="" decoding="async" />
+              <div
+                v-if="previewItem.kind === 'image'"
+                class="preview-image-viewport"
+                :class="{ dragging: imageDragging }"
+                role="img"
+                aria-label="图片预览，可滚轮缩放并拖动"
+                @wheel="zoomImage"
+                @pointerdown="startImagePan"
+                @pointermove="moveImagePan"
+                @pointerup="stopImagePan"
+                @pointercancel="stopImagePan"
+                @dblclick="resetImageOnDoubleClick"
+              >
+                <img
+                  class="preview-image"
+                  :src="previewItem.dataUrl"
+                  alt=""
+                  decoding="async"
+                  :style="{ transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})` }"
+                />
+                <span class="image-zoom-hint">滚轮缩放 · 拖动查看 · 双击重置</span>
+                <span class="image-zoom-level">{{ Math.round(imageZoom * 100) }}%</span>
+              </div>
               <pre v-else-if="previewItem.kind === 'text'" class="preview-text">{{ previewItem.text }}</pre>
               <div v-else class="preview-files">
                 <div v-for="path in previewItem.paths" :key="path" class="preview-file-row">
