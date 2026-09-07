@@ -6,6 +6,29 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.3.1] - 2026-09-07
+
+### Fixed
+
+- Moves settings persistence, state loading and clipboard copying off the native UI thread; avoids full-history broadcasts for visual settings.
+- Skips unchanged Windows clipboard payloads and reduces repeated serialization during retention cleanup.
+- Fixes updater keyboard isolation, focus restoration, stale metadata, installation busy state and copy-link error feedback.
+- Prevents preview/settings keyboard input and concurrent clicks from triggering unintended copies.
+- Reconciles retained history records, preserves expanded lists, clears temporary pauses correctly and prevents invalid size displays.
+- Restores history and storage locations on persistence failures and replaces stored files without deleting the valid destination first.
+
+### Improved
+
+- Simplifies compact panel controls with icon filters, tooltips and per-record preview/actions.
+- Refines the title-bar mark, scrollbars, dark-theme contrast, narrow dialogs and keyboard selection scrolling.
+- Reports paste-command submission separately from confirmed target-editor acceptance.
+
+### Verification
+
+- The audited source passed 13 frontend tests, 20 Windows native tests and eight light/dark responsive browser cases with 936 synthetic records.
+- A GitHub-built Windows package passed shortcut, caret-placement and focused-textbox paste smoke tests.
+- Universal multi-monitor/application paste and a real previous-release update installation remain desktop acceptance tasks; see `docs/AUDIT-2026-09-07.md` for other open requirements.
+
 ## [2.2.4] - 2026-08-11
 
 ### Fixed
