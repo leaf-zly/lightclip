@@ -160,7 +160,7 @@ button {
   min-width: 0;
   height: 42px;
   color: var(--text);
-  background: var(--chrome-bg);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
@@ -184,11 +184,14 @@ button {
 }
 
 .window-icon {
-  width: 20px;
-  height: 20px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   border-radius: 6px;
-  object-fit: contain;
+  color: var(--text);
+  background: var(--accent-soft);
 }
 
 .window-controls {
@@ -256,10 +259,9 @@ button {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 8px;
-  color: var(--accent-contrast);
+  color: var(--text);
   font-weight: 800;
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  box-shadow: 0 10px 24px var(--accent-ring);
+  background: var(--accent-soft);
 }
 
 h1,
@@ -398,13 +400,29 @@ h1 {
   max-height: none;
 }
 
-.settings-pane::-webkit-scrollbar {
-  width: 8px;
+/* Inherit theme colors in every scrolling surface, including nested previews. */
+.shell * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
-.settings-pane::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--accent) 28%, var(--border-strong));
-  border-radius: 999px;
+.shell *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.shell *::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+.shell *::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.shell *::-webkit-scrollbar-track,
+.shell *::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .setting-row {
@@ -656,13 +674,8 @@ h1 {
   padding-right: 4px;
 }
 
-.history-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.history-list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--accent) 20%, #cbd4e0);
-  border-radius: 999px;
+.history-list {
+  scrollbar-gutter: stable;
 }
 
 .history-item {
@@ -1279,7 +1292,7 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0 30px 0 10px;
-  color: var(--text-primary);
+  color: var(--text);
   background: var(--surface-raised);
   font: inherit;
 }
@@ -1407,7 +1420,7 @@ kbd {
   color: var(--accent-strong);
   font-size: 10px;
   font-weight: 750;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -1417,6 +1430,7 @@ kbd {
 }
 
 .updater-version-badge {
+  grid-column: 2;
   align-self: start;
   padding: 5px 8px;
   color: var(--accent-strong);
@@ -1550,23 +1564,26 @@ kbd {
 /* Win+V-inspired compact panel */
 .shell.interface-compact .maximize-control,
 .shell.interface-compact .secondary-action,
-.shell.interface-compact .brand p,
+.shell.interface-compact .brand,
 .shell.interface-compact .filter-row > svg,
 .shell.interface-compact .filter-select,
 .shell.interface-compact .list-toolbar,
 .shell.interface-compact .item-actions,
 .shell.interface-compact .footer { display: none; }
 .shell.interface-compact .panel { gap: 8px; padding: 10px; }
-.shell.interface-compact .topbar { min-height: 36px; gap: 8px; }
+.shell.interface-compact .topbar { flex: 0 0 32px; min-height: 32px; gap: 8px; justify-content: flex-end; }
 .shell.interface-compact .brand { gap: 8px; }
 .shell.interface-compact .brand-mark { width: 32px; height: 32px; box-shadow: none; }
 .shell.interface-compact h1 { font-size: 14px; }
 .shell.interface-compact .top-actions { gap: 4px; }
-.shell.interface-compact .top-actions .icon-button { width: 32px; height: 32px; }
-.shell.interface-compact .search-row { min-height: 42px; padding: 0 10px; }
+.shell.interface-compact .top-actions .icon-button { width: 32px; height: 32px; background: transparent; box-shadow: none; }
+.shell.interface-compact .top-actions .icon-button:hover,
+.shell.interface-compact .top-actions .icon-button.active { color: var(--text); background: var(--accent-soft); }
+.shell.interface-compact .search-row { flex-basis: 42px; min-height: 42px; padding: 0 10px; }
 .shell.interface-compact .filter-row { display: block; min-height: 32px; }
-.shell.interface-compact .filter-tabs { gap: 4px; }
-.shell.interface-compact .filter-tab { min-width: 58px; height: 30px; padding: 0 8px; }
+.shell.interface-compact .filter-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(64px, 1.4fr); gap: 2px; overflow: visible; }
+.shell.interface-compact .filter-tab { min-width: 0; height: 32px; padding: 0 3px; font-size: 12px; white-space: nowrap; border-color: transparent; background: transparent; border-radius: 5px; }
+.shell.interface-compact .filter-tab.selected { color: var(--text); background: var(--accent-soft); box-shadow: inset 0 -2px var(--accent); }
 .shell.interface-compact .filter-tab b { display: none; }
 .shell.interface-compact .history-list { gap: 6px; padding-right: 2px; }
 .shell.interface-compact .history-item { min-height: 58px; padding: 8px 9px; }
@@ -1585,6 +1602,32 @@ kbd {
 
 .shell.interface-compact .history-item {
   min-height: 72px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.shell.interface-compact .history-item.selected {
+  background: var(--accent-faint);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.item-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.filter-tab:focus-visible,
+.window-controls button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (max-width: 620px) {
+  .topbar { flex-wrap: wrap; flex-basis: auto; }
+  .top-actions { gap: 4px; flex-wrap: wrap; }
+  .brand p { overflow-wrap: anywhere; }
+  .filter-row { flex-wrap: wrap; }
 }
 
 .shell.interface-compact .image-item-copy {
@@ -1594,3 +1637,131 @@ kbd {
 .paste-toast {
   border-color: var(--accent);
 }
+
+/* Neutral surfaces keep accents readable across all five user palettes. */
+.shell {
+  --surface: #f5f5f7;
+  --surface-raised: #ffffff;
+  --surface-muted: #e9e9ed;
+  --surface-pressed: #e2e2e7;
+  --text: #1d1d1f;
+  --muted: #68686e;
+  --border: rgb(0 0 0 / 0.07);
+  --window-bg: var(--surface);
+}
+
+.shell.mode-dark {
+  --surface: #202022;
+  --surface-raised: #2c2c2e;
+  --surface-muted: #363639;
+  --surface-pressed: #414145;
+  --text: #f5f5f7;
+  --muted: #b0b0b8;
+  --border: rgb(255 255 255 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .shell.mode-system {
+    --surface: #202022;
+    --surface-raised: #2c2c2e;
+    --surface-muted: #363639;
+    --surface-pressed: #414145;
+    --text: #f5f5f7;
+    --muted: #b0b0b8;
+    --border: rgb(255 255 255 / 0.08);
+    --window-bg: var(--surface);
+  }
+}
+
+.top-actions .icon-button { background: transparent; box-shadow: none; }
+.top-actions .icon-button:hover { background: var(--surface-muted); }
+.top-actions .icon-button.active { color: var(--text); background: var(--accent-soft); }
+.search-row { background: var(--surface-muted); border-color: transparent; color: var(--muted); }
+.search-row input { font-size: 14px; }
+.search-row:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+.history-item { background: var(--surface-raised); }
+.history-item.selected { background: var(--accent-faint); box-shadow: inset 2px 0 var(--accent); }
+.icon-button:active { transform: scale(0.98); }
+
+.filter-row { grid-template-columns: minmax(0, 1fr) auto; position: relative; z-index: 2; overflow: visible; }
+.filter-tabs,
+.shell.interface-compact .filter-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  overflow: visible;
+  padding: 3px;
+  background: var(--surface-muted);
+  border-radius: 8px;
+}
+.filter-tab,
+.shell.interface-compact .filter-tab {
+  position: relative;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+}
+.filter-tab.selected,
+.shell.interface-compact .filter-tab.selected {
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+}
+.filter-tab.selected svg { stroke: var(--accent); }
+.filter-tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, visibility 120ms;
+}
+.filter-tab:first-child .filter-tooltip { left: 0; transform: none; }
+.filter-tab:last-child .filter-tooltip { left: auto; right: 0; transform: none; }
+.filter-tab:hover .filter-tooltip,
+.filter-tab:focus-visible .filter-tooltip { visibility: visible; opacity: 1; transition-delay: 250ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .shell *, .shell *::before, .shell *::after { transition: none !important; animation: none !important; }
+}
+
+.window-controls .compact-more { display: none; }
+.shell.interface-compact .window-controls .compact-more { display: grid; width: 36px; }
+.shell.interface-compact .topbar { display: none; }
+
+/* Native popover provides outside-click dismissal and Escape without a global listener. */
+.quick-actions {
+  position: fixed;
+  inset: 44px 10px auto auto;
+  margin: 0;
+  width: min(220px, calc(100vw - 20px));
+  max-height: calc(100vh - 58px);
+  overflow-y: auto;
+  padding: 6px;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.2);
+  -webkit-app-region: no-drag;
+}
+.quick-actions-status { display: block; padding: 8px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.quick-actions button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 8px 10px; text-align: left; color: var(--text); background: transparent; font-size: 13px; border-radius: 5px; cursor: pointer; }
+.quick-actions button:hover { background: var(--accent-soft); }
+.quick-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

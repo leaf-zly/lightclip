@@ -686,7 +686,19 @@ fn optimize_storage(app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandRe
 }
 
 #[tauri::command]
-fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<AppSettings> {
+async fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_, AppRuntime>) -> Result<CommandResult<AppSettings>, String> {
+  let runtime = runtime.inner().clone();
+  // Synchronous commands execute on the UI thread. Compression, file I/O and
+  // waiting for the capture worker's store lock must not block WebView painting.
+  tauri::async_runtime::spawn_blocking(move || apply_settings_update(settings, app, &runtime))
+    .await
+    .map_err(|error| format!("Settings worker failed: {error}"))
+}
+
+/// Persists a settings patch off the UI thread, keeping visual replies history-free.
+fn apply_settings_update(settings: AppSettingsPatch, app: AppHandle, runtime: &AppRuntime) -> CommandResult<AppSettings> {
+  let visual_only = settings.is_visual_only();
+  let update_startup = settings.launch_at_login.is_some();
   let requested_interface_mode = settings.interface_mode.clone();
   if let Some(interface_mode) = requested_interface_mode.as_deref() {
     let current_interface_mode = runtime
@@ -722,8 +734,14 @@ fn update_settings(settings: AppSettingsPatch, app: AppHandle, runtime: State<'_
           return err(format!("快捷键注册失败: {error}"));
         }
       }
-      apply_launch_at_login(settings.launch_at_login);
-      broadcast_state(&app, &runtime);
+      if update_startup {
+        apply_launch_at_login(settings.launch_at_login);
+      }
+      // The caller already has the history. A full snapshot would serialize and
+      // render image payloads again just to acknowledge a layout or color change.
+      if !visual_only {
+        broadcast_state(&app, runtime);
+      }
       ok(settings)
     }
     Err(error) => err(error.to_string()),
@@ -801,7 +819,7 @@ fn quit_app(app: AppHandle) {
   app.exit(0);
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AppSettingsPatch {
   capture_enabled: Option<bool>,
@@ -828,6 +846,19 @@ struct AppSettingsPatch {
   automatic_backups: Option<bool>,
   backup_interval_hours: Option<u64>,
   backup_keep_count: Option<usize>,
+}
+
+impl AppSettingsPatch {
+  /// True only for appearance patches that cannot change the history contents.
+  fn is_visual_only(&self) -> bool {
+    if self.capture_paused_until.is_some() {
+      return false;
+    }
+    let Ok(serde_json::Value::Object(fields)) = serde_json::to_value(self) else { return false; };
+    fields.iter().any(|(_, value)| !value.is_null()) && fields.iter().all(|(key, value)| {
+      value.is_null() || matches!(key.as_str(), "themeAccent" | "themeMode" | "interfaceMode")
+    })
+  }
 }
 
 impl ClipboardStore {
@@ -1113,6 +1144,7 @@ impl ClipboardStore {
   }
 
   fn update_settings(&mut self, patch: AppSettingsPatch) -> anyhow::Result<AppSettings> {
+    let visual_only = patch.is_visual_only();
     if let Some(value) = patch.capture_enabled {
       self.state.settings.capture_enabled = value;
     }
@@ -1186,7 +1218,9 @@ impl ClipboardStore {
       self.state.settings.backup_keep_count = value;
     }
     self.state.settings = normalize_settings(self.state.settings.clone());
-    self.trim_overflow();
+    if !visual_only {
+      self.trim_overflow();
+    }
     self.save()?;
     Ok(self.state.settings.clone())
   }
@@ -2652,6 +2686,29 @@ fn err<T: Serialize>(message: impl Into<String>) -> CommandResult<T> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn visual_patches_do_not_request_history_refresh() {
+    for value in [
+      serde_json::json!({"interfaceMode": "compact"}),
+      serde_json::json!({"themeMode": "dark", "themeAccent": "blue"}),
+    ] {
+      let patch: AppSettingsPatch = serde_json::from_value(value).unwrap();
+      assert!(patch.is_visual_only());
+    }
+    for value in [
+      serde_json::json!({}),
+      serde_json::json!({"interfaceMode": "compact", "maxHistoryItems": 100}),
+      serde_json::json!({"themeMode": "dark", "captureEnabled": false}),
+      serde_json::json!({"launchAtLogin": false}),
+    ] {
+      let patch: AppSettingsPatch = serde_json::from_value(value).unwrap();
+      assert!(!patch.is_visual_only());
+    }
+    let mut patch: AppSettingsPatch = serde_json::from_value(serde_json::json!({"themeMode": "dark"})).unwrap();
+    patch.capture_paused_until = Some(None);
+    assert!(!patch.is_visual_only());
+  }
 
   #[test]
   fn clipboard_items_serialize_with_renderer_field_names() {

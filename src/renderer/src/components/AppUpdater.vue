@@ -5,6 +5,12 @@ import { useAppUpdater } from '../composables/useAppUpdater'
 import { getLightClipApi } from '../runtime'
 import { parseReleaseNotes } from '../updater-utils'
 
+/** Presentation options for hosts that provide their own updater action. */
+defineProps<{
+  /** Hides only the default button; background checks and the dialog stay mounted. */
+  hideTrigger?: boolean
+}>()
+
 const {
   status,
   dialogOpen,
@@ -19,6 +25,9 @@ const {
   closeDialog,
 } = useAppUpdater()
 const lightClip = getLightClipApi()
+
+/** Allows title-bar actions to open the same persistent updater instance. */
+defineExpose({ checkForUpdate })
 
 const releasePageUrl = 'https://github.com/leaf-zly/lightclip/releases/latest'
 const downloadUrl = computed(() => releasePageUrl)
@@ -59,6 +68,7 @@ function handleDialogKeydown(event: KeyboardEvent): void {
 
 <template>
   <button
+    v-if="!hideTrigger"
     class="icon-button updater-trigger"
     :class="{ active: status === 'available' }"
     type="button"

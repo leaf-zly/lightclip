@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Check,
+  ClipboardList,
   ChevronDown,
   Clock,
   Copy,
@@ -12,8 +13,10 @@ import {
   FolderOpen,
   Image,
   LayoutList,
-  ListFilter,
+  Layers,
+  Type,
   Minus,
+  Ellipsis,
   Moon,
   Pause,
   Pin,
@@ -32,8 +35,7 @@ import {
   Wrench,
   X,
 } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import appIconUrl from '../../../resources/lightclip-mark.svg?url'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component } from 'vue'
 import type {
   AppInterfaceMode,
   AppSettings,
@@ -86,6 +88,8 @@ interface HistoryFilterOption {
   id: 'all' | 'pinned' | 'recent' | ClipboardItemKind
   /** Human-readable toolbar label. */
   label: string
+  /** Lucide icon paired with an accessible label and hover tooltip. */
+  icon: Component
 }
 
 const lightClip = getLightClipApi()
@@ -110,12 +114,12 @@ const interfaceModes: readonly InterfaceModeOption[] = [
   { id: 'compact', label: '简略' },
 ]
 const historyFilters: readonly HistoryFilterOption[] = [
-  { id: 'all', label: '全部' },
-  { id: 'text', label: '文本' },
-  { id: 'image', label: '图片' },
-  { id: 'file', label: '文件' },
-  { id: 'pinned', label: '片段' },
-  { id: 'recent', label: '最近使用' },
+  { id: 'all', label: '全部', icon: Layers },
+  { id: 'text', label: '文本', icon: Type },
+  { id: 'image', label: '图片', icon: Image },
+  { id: 'file', label: '文件', icon: FolderOpen },
+  { id: 'pinned', label: '片段', icon: Pin },
+  { id: 'recent', label: '最近使用', icon: Clock },
 ]
 
 const state = shallowRef<AppState>({
@@ -160,6 +164,8 @@ const timeFilter = ref<HistoryTimeFilter>('all')
 const selectedIndex = ref(0)
 const visibleLimit = ref(INITIAL_RENDER_LIMIT)
 const showSettings = ref(false)
+const quickActions = ref<HTMLElement | null>(null)
+const updater = ref<InstanceType<typeof AppUpdater> | null>(null)
 const previewItem = ref<ClipboardItem | null>(null)
 const toast = ref('')
 const pasteStatus = ref<PasteStatusUpdate['status'] | null>(null)
@@ -173,8 +179,11 @@ let clockTimer: number | null = null
 let toastTimer: number | null = null
 let searchTimer: number | null = null
 
+// Vue preserves this computed value when a settings-only response retains the
+// same items array, so changing appearance does not invalidate history searches.
+const historyItems = computed(() => state.value.items)
 const filteredItems = computed(() =>
-  state.value.items.filter((item) => {
+  historyItems.value.filter((item) => {
     if (!matchesAdvancedQuery(item, query.value, now.value) || !matchesTimeFilter(item, timeFilter.value, now.value)) {
       return false
     }
@@ -492,7 +501,12 @@ async function closeWindow(): Promise<void> {
   await lightClip.closeWindow()
 }
 
+let settingsQueue: Promise<void> = Promise.resolve()
+let settingsRevision = 0
+
+/** Applies appearance immediately and serializes persistence to prevent stale mode replies. */
 async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
+  const revision = ++settingsRevision
   const shouldApplyOptimisticSettings = isVisualSettingsUpdate(settings)
   if (shouldApplyOptimisticSettings) {
     // Apply visual settings in the renderer first; persistence must never block a layout repaint.
@@ -505,7 +519,11 @@ async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
     }
   }
 
-  const result = await lightClip.updateSettings(settings)
+  const request = settingsQueue.then(() => lightClip.updateSettings(settings))
+  settingsQueue = request.then(() => undefined, () => undefined)
+  const result = await request.catch(() => ({ ok: false, error: '设置保存失败' } as const))
+  // A newer local choice owns the visible state while older writes finish.
+  if (revision !== settingsRevision) return
   if (!result.ok) {
     showToast(result.error ?? '设置保存失败')
     state.value = await lightClip.getState()
@@ -637,6 +655,22 @@ function formatClock(timestamp: number): string {
   return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
 }
 
+/** Moves focus and selection within the filter group without triggering history shortcuts. */
+function handleFilterKeyboard(event: KeyboardEvent): void {
+  event.stopPropagation()
+  const index = historyFilters.findIndex((filter) => filter.id === activeFilter.value)
+  let nextIndex: number
+  if (event.key === 'ArrowRight') nextIndex = (index + 1) % historyFilters.length
+  else if (event.key === 'ArrowLeft') nextIndex = (index + historyFilters.length - 1) % historyFilters.length
+  else if (event.key === 'Home') nextIndex = 0
+  else if (event.key === 'End') nextIndex = historyFilters.length - 1
+  else return
+  event.preventDefault()
+  activeFilter.value = historyFilters[nextIndex].id
+  const group = event.currentTarget as HTMLElement
+  group.querySelectorAll<HTMLButtonElement>('.filter-tab')[nextIndex]?.focus()
+}
+
 function handleKeyboard(event: KeyboardEvent): void {
   if (event.ctrlKey && !event.altKey && !event.metaKey && /^[1-9]$/.test(event.key)) {
     const item = filteredItems.value[Number(event.key) - 1]
@@ -679,10 +713,13 @@ function handleKeyboard(event: KeyboardEvent): void {
   <main class="shell" :class="shellClasses" @keydown="handleKeyboard">
     <header class="window-frame">
       <div class="window-title">
-        <img class="window-icon" :src="appIconUrl" alt="" />
+        <span class="window-icon" aria-hidden="true"><ClipboardList :size="17" :stroke-width="1.7" /></span>
         <span>LightClip</span>
       </div>
       <div class="window-controls">
+        <button class="compact-more" type="button" title="更多操作" aria-label="更多操作" popovertarget="quick-actions">
+          <Ellipsis :size="18" />
+        </button>
         <button type="button" title="最小化" @click="minimizeWindow">
           <Minus :size="14" />
         </button>
@@ -695,10 +732,23 @@ function handleKeyboard(event: KeyboardEvent): void {
       </div>
     </header>
 
+    <div id="quick-actions" ref="quickActions" class="quick-actions" popover="auto" role="group" aria-label="更多操作" @keydown.stop @click="quickActions?.hidePopover()">
+      <span class="quick-actions-status">{{ captureStatus }}</span>
+      <button type="button" @click="toggleCapture">
+        <Pause v-if="state.settings.captureEnabled && !captureIsTemporarilyPaused" :size="16" /><Play v-else :size="16" />
+        {{ state.settings.captureEnabled && !captureIsTemporarilyPaused ? '暂停记录' : '恢复记录' }}
+      </button>
+      <button type="button" @click="toggleInterfaceMode"><LayoutList :size="16" />{{ quickInterfaceLabel }}</button>
+      <button type="button" @click="toggleThemeMode"><Eclipse :size="16" />{{ quickThemeLabel }}</button>
+      <button type="button" @click="updater?.checkForUpdate(true)"><RefreshCw :size="16" />检查更新</button>
+      <button type="button" @click="showSettings = !showSettings"><Settings :size="16" />{{ showSettings ? '返回历史' : '设置' }}</button>
+    </div>
+    <AppUpdater ref="updater" hide-trigger />
+
     <section class="panel">
       <header class="topbar">
         <div class="brand" aria-label="LightClip">
-          <div class="brand-mark">L</div>
+          <span class="brand-mark" aria-hidden="true"><ClipboardList :size="24" :stroke-width="1.7" /></span>
           <div>
             <h1>LightClip</h1>
             <p>{{ captureStatus }} · {{ state.items.length }} 条历史 · {{ pinnedCount }} 条片段 · {{ storageLabel }}</p>
@@ -726,8 +776,8 @@ function handleKeyboard(event: KeyboardEvent): void {
             <Sun v-if="state.settings.themeMode === 'dark'" :size="18" />
             <Moon v-else :size="18" />
           </button>
-          <AppUpdater />
-          <button class="icon-button" type="button" title="设置" @click="showSettings = !showSettings">
+          <button class="icon-button" type="button" title="检查更新" @click="updater?.checkForUpdate(true)"><RefreshCw :size="18" /></button>
+          <button class="icon-button" :class="{ active: showSettings }" :aria-pressed="showSettings" type="button" title="设置" @click="showSettings = !showSettings">
             <Settings :size="18" />
           </button>
           <button class="icon-button danger secondary-action" type="button" title="退出 LightClip" @click="quitApp">
@@ -752,20 +802,21 @@ function handleKeyboard(event: KeyboardEvent): void {
       </div>
 
       <div v-if="!showSettings" class="filter-row" aria-label="历史筛选">
-        <ListFilter :size="17" />
-        <div class="filter-tabs" role="tablist">
+        <div class="filter-tabs" role="group" aria-label="内容类型" @keydown="handleFilterKeyboard">
           <button
             v-for="filter in historyFilters"
             :key="filter.id"
             class="filter-tab"
             :class="{ selected: activeFilter === filter.id }"
             type="button"
-            role="tab"
-            :aria-selected="activeFilter === filter.id"
+            :aria-label="`${filter.label}，${filterCount(filter.id)} 条`"
+            :aria-pressed="activeFilter === filter.id"
+            :aria-describedby="`filter-tip-${filter.id}`"
+            :tabindex="activeFilter === filter.id ? 0 : -1"
             @click="activeFilter = filter.id"
           >
-            <span>{{ filter.label }}</span>
-            <b>{{ filterCount(filter.id) }}</b>
+            <component :is="filter.icon" :size="18" :stroke-width="1.7" aria-hidden="true" />
+            <span :id="`filter-tip-${filter.id}`" class="filter-tooltip" role="tooltip">{{ filter.label }} · {{ filterCount(filter.id) }} 条</span>
           </button>
         </div>
         <select v-model="timeFilter" class="filter-select" title="时间范围" aria-label="时间范围">
