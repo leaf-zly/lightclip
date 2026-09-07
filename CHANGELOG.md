@@ -20,6 +20,18 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Packaging probes the real NSIS installer window on an isolated GitHub Windows runner before release publication.
 - Installer handoff verification does not certify a complete old-version-to-new-version replacement or antivirus compatibility.
 
+## [2.3.3] - 2026-09-07
+
+### Added
+
+- Enlarged image preview with mouse-wheel zoom from 50% to 500%, left-button panning, and double-click reset to 100%.
+- Added zoom percentage and interaction hints while preserving modal keyboard focus.
+
+### Verified
+
+- Image zoom, panning and reset are covered by the responsive browser audit.
+- Existing build, renderer tests and Windows native/package checks remain required before publication.
+
 ## [2.3.2] - 2026-09-07
 
 ### Fixed

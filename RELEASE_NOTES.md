@@ -1,6 +1,6 @@
-# LightClip v2.3.2
+# LightClip v2.3.3
 
-This maintenance release addresses preview-button stalls and improves long-content and image previews. Existing history and settings remain compatible.
+This maintenance release adds a larger, interactive image preview. Existing history and settings remain compatible.
 
 ## Responsiveness
 
@@ -33,4 +33,4 @@ Browser tests use mocked native responses. Performance with the user's actual hi
 - The portable executable is available separately.
 - `latest.json` and `.sig` files are updater metadata, not installers. Updater signatures are not Windows Authenticode code signing; unsigned Windows binaries may still trigger antivirus or SmartScreen warnings.
 
-[Download LightClip v2.3.2](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.2)
+[Download LightClip v2.3.3](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.3)

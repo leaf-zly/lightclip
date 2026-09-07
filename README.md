@@ -4,7 +4,7 @@ LightClip is a lightweight, local-first clipboard history app for Windows. Versi
 
 Clipboard data stays on your machine. LightClip does not include telemetry, cloud sync, or a background network service. Network access is limited to signed update checks and downloads from GitHub Releases.
 
-> Current version: `v2.3.2`. Windows packages are built by GitHub Actions and published through GitHub Releases.
+> Current version: `v2.3.3`. Windows packages are built by GitHub Actions and published through GitHub Releases.
 
 ## Features
 
