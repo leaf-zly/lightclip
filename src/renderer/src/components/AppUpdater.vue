@@ -120,7 +120,7 @@ function handleDialogKeydown(event: KeyboardEvent): void {
               <strong v-if="status === 'error'">更新未完成</strong>
               <strong v-else-if="status === 'checking'">正在检查更新</strong>
               <strong v-else-if="status === 'downloading'">正在下载更新</strong>
-              <strong v-else-if="status === 'ready'">正在安装并重启</strong>
+              <strong v-else-if="status === 'ready'">正在打开安装程序</strong>
               <strong v-else-if="update">发现新版本 <b>v{{ update.version }}</b></strong>
               <strong v-else-if="status === 'current'">当前已是最新版本</strong>
               <strong v-else>正在检查更新</strong>

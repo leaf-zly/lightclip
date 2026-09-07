@@ -10,6 +10,6 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "process:allow-restart",
-    "updater:default"
+    "updater:allow-check"
   ]
 }

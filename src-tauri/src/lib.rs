@@ -21,6 +21,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
+mod updater_install;
 
 const STORE_VERSION: u32 = 1;
 const STORE_FILE_NAME: &str = "lightclip-store.json.br";
@@ -432,6 +433,7 @@ pub fn run() {
       }
     })
     .invoke_handler(tauri::generate_handler![
+      updater_install::install_signed_update,
       get_state,
       copy_item,
       delete_item,

@@ -6,6 +6,20 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+### Fixed
+
+- Replaces unconditional Windows updater exit with signature-verified download and checked installer-window handoff.
+- Keeps LightClip running on blocked/missing installer launches and reports errors in the updater dialog and native log.
+- Uses visible NSIS installation and explicit relaunch without inheriting startup `--hidden` arguments.
+- Disables legacy renderer installer permissions and distinguishes verified installation from download completion.
+- Prevents retry from spawning duplicate installers when a previous launch is still waiting for UI.
+
+### Verification
+
+- Adds failed-launch, retry-gate, installer-file and renderer-handoff regression tests.
+- Packaging probes the real NSIS installer window on an isolated GitHub Windows runner before release publication.
+- Installer handoff verification does not certify a complete old-version-to-new-version replacement or antivirus compatibility.
+
 ## [2.3.2] - 2026-09-07
 
 ### Fixed

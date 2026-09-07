@@ -60,10 +60,13 @@ function installFixture({mode, theme, accent}) {
         if(audit.updateCase==='current') return null;
         return {rid:1,version:'9.0.0',currentVersion:'2.3.0',body:'## Changes\n'+('- Synthetic release note\n').repeat(80)};
       }
-      if(command==='plugin:updater|download_and_install') {
+      if(command==='plugin:updater|download_and_install' || command==='plugin:process|restart') throw Error('Unsafe legacy updater path');
+      if(command==='install_signed_update') {
+        if(args.rid!==1) throw Error('Invalid update resource');
         args.onEvent.onmessage({event:'Started',data:{contentLength:100}});
         args.onEvent.onmessage({event:'Progress',data:{chunkLength:100}});
         args.onEvent.onmessage({event:'Finished'});
+        audit.installChannel=args.onEvent;
         await new Promise(resolve=>{audit.releaseInstall=resolve;});
         throw Error('Synthetic installation failure');
       }
@@ -155,6 +158,8 @@ function installFixture({mode, theme, accent}) {
         await page.getByRole('button',{name:'下载并安装'}).click();
         await page.waitForFunction(()=>!!audit.releaseInstall);
         assert.equal(await page.getByTitle('关闭',{exact:true}).isDisabled(),true);
+        await page.evaluate(()=>audit.installChannel.onmessage({event:'Installing'}));
+        await page.getByText('正在打开安装程序',{exact:true}).waitFor();
         await page.keyboard.press('Escape');
         assert.equal(await page.evaluate(()=>audit.hides),0);
         await page.evaluate(()=>audit.releaseInstall());

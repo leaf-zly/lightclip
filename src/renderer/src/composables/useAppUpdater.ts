@@ -1,4 +1,5 @@
 import type { Update } from '@tauri-apps/plugin-updater'
+import { installSignedUpdate } from '../install-update'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { calculateDownloadPercent, describeUpdaterError, runUpdateCheckWithRetry } from '../updater-utils'
 
@@ -74,7 +75,7 @@ export function useAppUpdater() {
     }
   }
 
-  /** Downloads, verifies, installs, and relaunches into the selected release. */
+  /** Downloads and verifies; native code exits only after installer UI is confirmed. */
   async function installUpdate(): Promise<void> {
     if (!update.value || isBusy.value) {
       return
@@ -84,17 +85,17 @@ export function useAppUpdater() {
     totalBytes.value = undefined
     errorMessage.value = ''
     try {
-      await update.value.downloadAndInstall((event) => {
+      await installSignedUpdate(update.value, (event) => {
         if (event.event === 'Started') {
           totalBytes.value = event.data.contentLength
         } else if (event.event === 'Progress') {
           downloadedBytes.value += event.data.chunkLength
+        } else if (event.event === 'Installing') {
+          status.value = 'ready'
         }
       })
-      // Transfer completion precedes installation; keep the dialog busy throughout.
+      // Native code owns exit/relaunch. Do not restart the old binary from the renderer.
       status.value = 'ready'
-      const { relaunch } = await import('@tauri-apps/plugin-process')
-      await relaunch()
     } catch (error) {
       status.value = 'error'
       errorMessage.value = describeUpdaterError(error)
