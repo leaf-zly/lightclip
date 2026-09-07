@@ -234,6 +234,13 @@ struct HistoryItemUpsert {
   retained_ids: Vec<String>,
 }
 
+/// Deletion receipt for the single renderer; excludes unrelated clipboard payloads.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryItemDeletion {
+  storage_bytes: u64,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum ClipboardItem {
@@ -564,28 +571,39 @@ fn copy_item_impl(id: String, app: AppHandle, runtime: &AppRuntime) -> CommandRe
 }
 
 #[tauri::command]
-fn delete_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<()> {
-  let changed = match runtime.store.lock().expect("store lock poisoned").delete_item(&id) {
-    Ok(changed) => changed,
-    Err(error) => return err(error.to_string()),
-  };
-  if changed {
-    broadcast_state(&app, &runtime);
-  }
-  ok_unit()
+/// Deletes on a worker and returns only storage metadata to the single panel.
+async fn delete_item(id: String, runtime: State<'_, AppRuntime>) -> Result<CommandResult<HistoryItemDeletion>, String> {
+  let runtime = runtime.inner().clone();
+  tauri::async_runtime::spawn_blocking(move || {
+    let mut store = runtime.store.lock().expect("store lock poisoned");
+    match store.delete_item(&id) {
+      Ok(_) => ok(HistoryItemDeletion { storage_bytes: store.storage_bytes() }),
+      Err(error) => err(error.to_string()),
+    }
+  }).await.map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn toggle_pin(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<ClipboardItem> {
-  let result = runtime.store.lock().expect("store lock poisoned").toggle_pin(&id);
-  match result {
-    Ok(Some(item)) => {
-      broadcast_state(&app, &runtime);
-      ok(item)
-    }
-    Ok(None) => err("记录不存在"),
-    Err(error) => err(error.to_string()),
-  }
+/// Persists pin changes off the UI thread without retransmitting unrelated image payloads.
+async fn toggle_pin(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Result<CommandResult<ClipboardItem>, String> {
+  let runtime = runtime.inner().clone();
+  tauri::async_runtime::spawn_blocking(move || {
+    let update = {
+      let mut store = runtime.store.lock().expect("store lock poisoned");
+      match store.toggle_pin(&id) {
+        Ok(Some(item)) => HistoryItemUpsert {
+          item,
+          storage_bytes: store.storage_bytes(),
+          retained_ids: store.state.items.iter().map(|item| item.id().to_string()).collect(),
+        },
+        Ok(None) => return err("记录不存在"),
+        Err(error) => return err(error.to_string()),
+      }
+    };
+    let item = update.item.clone();
+    emit_history_item_upserted(&app, update);
+    ok(item)
+  }).await.map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1093,28 +1111,26 @@ impl ClipboardStore {
   }
 
   fn delete_item(&mut self, id: &str) -> anyhow::Result<bool> {
-    let before = self.state.items.clone();
-    self.state.items.retain(|item| item.id() != id);
-    let changed = before.len() != self.state.items.len();
-    if changed {
-      if let Err(error) = self.save() {
-        self.state.items = before;
-        return Err(error);
-      }
+    let Some(index) = self.state.items.iter().position(|item| item.id() == id) else { return Ok(false); };
+    // Retain just the removed record for rollback, not every image in the store.
+    let removed = self.state.items.remove(index);
+    if let Err(error) = self.save() {
+      self.state.items.insert(index, removed);
+      return Err(error);
     }
-    Ok(changed)
+    Ok(true)
   }
 
   fn toggle_pin(&mut self, id: &str) -> anyhow::Result<Option<ClipboardItem>> {
-    let result = self.state.items.iter_mut().find(|item| item.id() == id).map(|item| {
-      item.toggle_pin();
-      item.set_updated_at(now_ms());
-      item.clone()
-    });
-    if result.is_some() {
-      self.save()?;
+    let Some(index) = self.state.items.iter().position(|item| item.id() == id) else { return Ok(None); };
+    let before = self.state.items[index].clone();
+    self.state.items[index].toggle_pin();
+    self.state.items[index].set_updated_at(now_ms());
+    if let Err(error) = self.save() {
+      self.state.items[index] = before;
+      return Err(error);
     }
-    Ok(result)
+    Ok(Some(self.state.items[index].clone()))
   }
 
   fn clear_history(&mut self) -> anyhow::Result<()> {
@@ -2798,7 +2814,16 @@ mod tests {
     store.storage_directory = invalid_directory;
     assert!(store.delete_item(latest.id()).is_err());
     assert!(store.get_item(latest.id()).is_some());
+    let before = serde_json::to_value(&store.state.items).unwrap();
+    assert!(store.toggle_pin(pinned.id()).is_err());
+    assert_eq!(serde_json::to_value(&store.state.items).unwrap(), before);
     fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn deletion_receipt_contains_only_storage_metadata() {
+    let receipt = serde_json::to_value(HistoryItemDeletion { storage_bytes: 42 }).unwrap();
+    assert_eq!(receipt, serde_json::json!({"storageBytes": 42}));
   }
 
   #[test]

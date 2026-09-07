@@ -670,7 +670,8 @@ h1 {
   min-height: 0;
   align-content: start;
   gap: 8px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 4px;
 }
 
@@ -780,6 +781,7 @@ h1 {
 .item-preview {
   display: -webkit-box;
   overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--text);
   font-size: 14px;
   line-height: 1.45;
@@ -1146,13 +1148,14 @@ kbd {
   place-items: center;
   padding: 24px;
   background: rgb(10 14 20 / 0.42);
-  backdrop-filter: blur(10px);
+  /* A flat dim layer avoids repainting a blurred, image-heavy list on each action. */
 }
 
 .preview-modal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(760px, 100%);
+  min-width: 0;
   max-height: min(82vh, 720px);
   overflow: hidden;
   color: var(--text);
@@ -1187,11 +1190,15 @@ kbd {
   margin-top: 5px;
   color: var(--muted);
   font-size: 12px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 
 .preview-body {
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 16px;
   background: var(--surface);
 }
@@ -1214,6 +1221,8 @@ kbd {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  tab-size: 2;
   color: var(--text);
   font-family: "Cascadia Code", Consolas, "SFMono-Regular", monospace;
   font-size: 13px;
@@ -1226,6 +1235,7 @@ kbd {
 }
 
 .preview-file-row {
+  min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 0.38fr) minmax(0, 0.62fr);
   align-items: center;
@@ -1254,6 +1264,30 @@ kbd {
   padding: 12px 16px;
   border-top: 1px solid var(--border);
 }
+
+.image-hover-preview {
+  position: fixed;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  pointer-events: none;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+}
+
+.image-hover-preview img {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.preview-actions .text-button { min-width: 74px; }
 
 .modal-enter-active,
 .modal-leave-active {

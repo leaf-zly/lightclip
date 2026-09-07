@@ -275,8 +275,8 @@ export interface LightClipApi {
   getState: () => Promise<AppState>
   /** Copies a history item back to the OS clipboard. */
   copyItem: (id: string) => Promise<CommandResult<ClipboardItem>>
-  /** Deletes one history item. */
-  deleteItem: (id: string) => Promise<CommandResult>
+  /** Deletes one history item; native hosts return storage size without a full snapshot. */
+  deleteItem: (id: string) => Promise<CommandResult<{ storageBytes: number } | undefined>>
   /** Toggles whether one item is pinned. */
   togglePin: (id: string) => Promise<CommandResult<ClipboardItem>>
   /** Deletes non-pinned records from history. */

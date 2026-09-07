@@ -48,6 +48,7 @@ import type {
   PasteStatusUpdate,
 } from '../../shared/types'
 import AppUpdater from './components/AppUpdater.vue'
+import HistoryImage from './components/HistoryImage.vue'
 import { getLightClipApi } from './runtime'
 import { mergeHistoryUpdate } from './history'
 import { containDialogFocus } from './dialog-focus'
@@ -173,6 +174,8 @@ const previewDialog = ref<HTMLElement | null>(null)
 let previewPreviousFocus: HTMLElement | null = null
 const toast = ref('')
 const copyInFlight = ref(false)
+const itemMutation = ref<{ id: string; action: 'pin' | 'delete' } | null>(null)
+const itemActionBusy = computed(() => copyInFlight.value || itemMutation.value !== null)
 const pasteStatus = ref<PasteStatusUpdate['status'] | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 const now = ref(Date.now())
@@ -345,7 +348,7 @@ async function copySelectedItem(): Promise<void> {
 }
 
 async function copyItem(item: ClipboardItem): Promise<void> {
-  if (copyInFlight.value) return
+  if (itemActionBusy.value) return
   copyInFlight.value = true
   try {
     const result = await lightClip.copyItem(item.id)
@@ -358,17 +361,41 @@ async function copyItem(item: ClipboardItem): Promise<void> {
 }
 
 async function deleteItem(item: ClipboardItem): Promise<void> {
-  const result = await lightClip.deleteItem(item.id)
-  if (previewItem.value?.id === item.id) {
-    previewItem.value = null
+  if (itemActionBusy.value) return
+  itemMutation.value = { id: item.id, action: 'delete' }
+  try {
+    const result = await lightClip.deleteItem(item.id)
+    if (result.ok) {
+      // The native command returns metadata, not a multi-megabyte history snapshot.
+      state.value = { ...state.value, items: state.value.items.filter((entry) => entry.id !== item.id),
+        storageBytes: result.data?.storageBytes ?? state.value.storageBytes }
+      if (previewItem.value?.id === item.id) closePreview()
+    }
+    showToast(result.ok ? '已删除' : result.error ?? '删除失败')
+  } catch {
+    showToast('删除失败，请重试')
+  } finally {
+    itemMutation.value = null
   }
-  showToast(result.ok ? '已删除' : result.error ?? '删除失败')
 }
 
 async function togglePin(item: ClipboardItem): Promise<void> {
-  const result = await lightClip.togglePin(item.id)
-  if (result.ok && result.data && previewItem.value?.id === item.id) previewItem.value = result.data
-  showToast(result.ok ? (result.data?.pinned ? '已固定' : '已取消固定') : result.error ?? '操作失败')
+  if (itemActionBusy.value) return
+  itemMutation.value = { id: item.id, action: 'pin' }
+  try {
+    const result = await lightClip.togglePin(item.id)
+    if (result.ok && result.data && previewItem.value?.id === item.id) previewItem.value = result.data
+    showToast(result.ok ? (result.data?.pinned ? '已固定' : '已取消固定') : result.error ?? '操作失败')
+  } catch {
+    showToast('操作失败，请重试')
+  } finally {
+    itemMutation.value = null
+  }
+}
+
+/** Full plain-text hover label for truncated records; image previews use their own surface. */
+function itemHoverText(item: ClipboardItem): string {
+  return item.kind === 'text' ? item.text : item.kind === 'file' ? item.paths.join('\n') : describeItem(item)
 }
 
 async function clearHistory(): Promise<void> {
@@ -1212,14 +1239,12 @@ function handleKeyboard(event: KeyboardEvent): void {
             :class="[`history-item-${item.kind}`, { selected: selectedIndex === index, pinned: item.pinned }]"
             @mouseenter="selectedIndex = index"
           >
-            <button class="item-main" type="button" @click="copyItem(item)">
+            <button class="item-main" type="button" :disabled="itemActionBusy" @click="copyItem(item)">
               <span v-if="item.kind === 'image'" class="image-item-layout">
                 <span class="item-kind" :class="`kind-${item.kind}`">
                   <Image :size="17" />
                 </span>
-                <span class="image-preview-frame">
-                  <img class="image-preview" :src="item.dataUrl" alt="" loading="lazy" decoding="async" />
-                </span>
+                <HistoryImage :src="item.dataUrl" />
                 <span class="image-item-copy">
                   <span class="item-preview">{{ createItemTitle(item) }}</span>
                   <span class="item-meta">
@@ -1236,7 +1261,7 @@ function handleKeyboard(event: KeyboardEvent): void {
                     <Copy v-else :size="17" />
                   </span>
                   <span class="item-body">
-                    <span class="item-preview">{{ createItemTitle(item) }}</span>
+                    <span class="item-preview" :title="itemHoverText(item)">{{ createItemTitle(item) }}</span>
                   </span>
                 </span>
                 <span class="item-meta">
@@ -1255,15 +1280,16 @@ function handleKeyboard(event: KeyboardEvent): void {
                 class="icon-button small"
                 type="button"
                 :title="item.pinned ? '取消固定' : '固定'"
+                :disabled="itemActionBusy"
                 @click.stop="togglePin(item)"
               >
                 <PinOff v-if="item.pinned" :size="16" />
                 <Pin v-else :size="16" />
               </button>
-              <button class="icon-button small" type="button" title="复制" @click.stop="copyItem(item)">
+              <button class="icon-button small" type="button" title="复制" :disabled="itemActionBusy" @click.stop="copyItem(item)">
                 <Copy :size="16" />
               </button>
-              <button class="icon-button small danger" type="button" title="删除" @click.stop="deleteItem(item)">
+              <button class="icon-button small danger" type="button" title="删除" :disabled="itemActionBusy" @click.stop="deleteItem(item)">
                 <Trash2 :size="16" />
               </button>
             </div>
@@ -1291,7 +1317,7 @@ function handleKeyboard(event: KeyboardEvent): void {
           <section ref="previewDialog" tabindex="-1" class="preview-modal" role="dialog" aria-modal="true" aria-label="历史预览" @keydown="containDialogFocus" @keydown.esc="closePreview">
             <header class="preview-header">
               <div>
-                <strong>{{ createItemTitle(previewItem) }}</strong>
+                <strong :title="itemHoverText(previewItem)">{{ createItemTitle(previewItem) }}</strong>
                 <span>
                   {{ getKindLabel(previewItem.kind) }} · {{ describeItem(previewItem) }} ·
                   <Clock :size="13" /> {{ formatRelativeTime(previewItem.updatedAt, now) }}
@@ -1308,25 +1334,25 @@ function handleKeyboard(event: KeyboardEvent): void {
               <div v-else class="preview-files">
                 <div v-for="path in previewItem.paths" :key="path" class="preview-file-row">
                   <FolderOpen :size="16" />
-                  <span>{{ getFileName(path) }}</span>
-                  <small>{{ path }}</small>
+                  <span :title="path">{{ getFileName(path) }}</span>
+                  <small :title="path">{{ path }}</small>
                 </div>
               </div>
             </div>
 
-            <footer class="preview-actions">
-              <button class="text-button primary" type="button" @click="copyItem(previewItem)">
+            <footer class="preview-actions" :aria-busy="itemActionBusy">
+              <button class="text-button primary" type="button" :disabled="itemActionBusy" @click="copyItem(previewItem)">
                 <Copy :size="16" />
-                复制
+                {{ copyInFlight ? '复制中…' : '复制' }}
               </button>
-              <button class="text-button" type="button" @click="togglePin(previewItem)">
+              <button class="text-button" type="button" :disabled="itemActionBusy" @click="togglePin(previewItem)">
                 <PinOff v-if="previewItem.pinned" :size="16" />
                 <Pin v-else :size="16" />
-                {{ previewItem.pinned ? '取消固定' : '固定' }}
+                {{ itemMutation?.action === 'pin' ? '保存中…' : previewItem.pinned ? '取消固定' : '固定' }}
               </button>
-              <button class="text-button danger" type="button" @click="deleteItem(previewItem)">
+              <button class="text-button danger" type="button" :disabled="itemActionBusy" @click="deleteItem(previewItem)">
                 <Trash2 :size="16" />
-                删除
+                {{ itemMutation?.action === 'delete' ? '删除中…' : '删除' }}
               </button>
             </footer>
           </section>

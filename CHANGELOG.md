@@ -6,6 +6,19 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+### Fixed
+
+- Moves pin/delete persistence off the Windows UI thread and avoids full-history broadcasts for these actions.
+- Restores pin state on save failure and avoids cloning the complete image history when deleting one record.
+- Adds pending-action feedback, duplicate-action protection and failure recovery to preview buttons.
+- Removes history/preview horizontal scrolling; long record titles and file paths use ellipsis with full-text hover labels.
+- Removes expensive background blur from the history preview overlay.
+
+### Added
+
+- Delayed image hover previews constrained to the window, dismissed on scrolling, pointer exit, Escape and window blur.
+- Browser regression cases for delayed/failed actions, long unbroken content, long file paths and image-preview placement.
+
 ## [2.3.1] - 2026-09-07
 
 ### Fixed

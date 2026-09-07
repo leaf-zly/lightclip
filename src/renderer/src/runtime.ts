@@ -46,7 +46,7 @@ function isTauriRuntime(): boolean {
 const tauriLightClipApi: LightClipApi = {
   getState: () => invoke<AppState>('get_state'),
   copyItem: (id) => invoke<CommandResult<ClipboardItem>>('copy_item', { id }),
-  deleteItem: (id) => invoke<CommandResult>('delete_item', { id }),
+  deleteItem: (id) => invoke<CommandResult<{ storageBytes: number }>>('delete_item', { id }),
   togglePin: (id) => invoke<CommandResult<ClipboardItem>>('toggle_pin', { id }),
   clearHistory: () => invoke<CommandResult>('clear_history'),
   clearByKind: (kind: ClipboardItemKind) => invoke<CommandResult>('clear_by_kind', { kind }),
