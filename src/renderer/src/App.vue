@@ -49,6 +49,8 @@ import type {
 } from '../../shared/types'
 import AppUpdater from './components/AppUpdater.vue'
 import { getLightClipApi } from './runtime'
+import { mergeHistoryUpdate } from './history'
+import { containDialogFocus } from './dialog-focus'
 import { createItemTitle, describeItem, formatBytes, formatRelativeTime } from './utils'
 import { matchesAdvancedQuery, matchesTimeFilter, type HistoryTimeFilter } from './search'
 
@@ -167,7 +169,10 @@ const showSettings = ref(false)
 const quickActions = ref<HTMLElement | null>(null)
 const updater = ref<InstanceType<typeof AppUpdater> | null>(null)
 const previewItem = ref<ClipboardItem | null>(null)
+const previewDialog = ref<HTMLElement | null>(null)
+let previewPreviousFocus: HTMLElement | null = null
 const toast = ref('')
+const copyInFlight = ref(false)
 const pasteStatus = ref<PasteStatusUpdate['status'] | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 const now = ref(Date.now())
@@ -295,13 +300,7 @@ onBeforeUnmount(() => {
  * @param update Canonical record and compressed store size emitted by the Tauri host.
  */
 function applyHistoryItemUpsert(update: HistoryItemUpsert): void {
-  const items = state.value.items.filter((item) => item.id !== update.item.id)
-  items.push(update.item)
-  items.sort(
-    (left, right) =>
-      Number(right.pinned) - Number(left.pinned) ||
-      right.updatedAt - left.updatedAt,
-  )
+  const items = mergeHistoryUpdate(state.value.items, update)
   state.value = {
     ...state.value,
     items,
@@ -309,8 +308,13 @@ function applyHistoryItemUpsert(update: HistoryItemUpsert): void {
   }
 }
 
-watch([filteredItems, query, activeFilter], () => {
+watch([query, activeFilter, timeFilter], () => {
   visibleLimit.value = INITIAL_RENDER_LIMIT
+  selectedIndex.value = 0
+})
+
+watch(filteredItems, () => {
+  // Incremental capture and clock updates must not collapse an already-scrolled list.
   selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, filteredItems.value.length - 1))
 })
 
@@ -341,9 +345,15 @@ async function copySelectedItem(): Promise<void> {
 }
 
 async function copyItem(item: ClipboardItem): Promise<void> {
-  const result = await lightClip.copyItem(item.id)
-  if (!result.ok) {
-    showToast(result.error ?? '复制失败')
+  if (copyInFlight.value) return
+  copyInFlight.value = true
+  try {
+    const result = await lightClip.copyItem(item.id)
+    if (!result.ok) showToast(result.error ?? '复制失败')
+  } catch {
+    showToast('复制失败，请重试')
+  } finally {
+    copyInFlight.value = false
   }
 }
 
@@ -357,6 +367,7 @@ async function deleteItem(item: ClipboardItem): Promise<void> {
 
 async function togglePin(item: ClipboardItem): Promise<void> {
   const result = await lightClip.togglePin(item.id)
+  if (result.ok && result.data && previewItem.value?.id === item.id) previewItem.value = result.data
   showToast(result.ok ? (result.data?.pinned ? '已固定' : '已取消固定') : result.error ?? '操作失败')
 }
 
@@ -410,21 +421,7 @@ async function importHistory(): Promise<void> {
 }
 
 async function checkForUpdates(): Promise<void> {
-  const result = await lightClip.checkForUpdates()
-  if (!result.ok || !result.data) {
-    showToast(result.error ?? '检查更新失败')
-    return
-  }
-
-  if (!result.data.updateAvailable) {
-    showToast(`已是最新版本 ${result.data.currentVersion}`)
-    return
-  }
-
-  const confirmed = window.confirm(`发现新版本 ${result.data.latestVersion}，是否打开下载页？`)
-  if (confirmed) {
-    await lightClip.openExternalUrl(result.data.releaseUrl)
-  }
+  await updater.value?.checkForUpdate(true)
 }
 
 async function openStorageDirectory(): Promise<void> {
@@ -554,6 +551,7 @@ function moveSelection(delta: number): void {
   const nextIndex = selectedIndex.value + delta
   selectedIndex.value = Math.min(filteredItems.value.length - 1, Math.max(0, nextIndex))
   ensureVisibleLimitIncludes(selectedIndex.value)
+  void nextTick(() => document.querySelector('.history-item.selected')?.scrollIntoView({ block: 'nearest' }))
 }
 
 function ensureVisibleLimitIncludes(index: number): void {
@@ -581,11 +579,14 @@ function showToast(message: string): void {
 }
 
 function openPreview(item: ClipboardItem): void {
+  previewPreviousFocus = document.activeElement as HTMLElement | null
   previewItem.value = item
+  void nextTick(() => previewDialog.value?.focus())
 }
 
 function closePreview(): void {
   previewItem.value = null
+  if (previewPreviousFocus?.isConnected) previewPreviousFocus.focus()
 }
 
 function filterCount(filter: HistoryFilterOption['id']): number {
@@ -672,6 +673,15 @@ function handleFilterKeyboard(event: KeyboardEvent): void {
 }
 
 function handleKeyboard(event: KeyboardEvent): void {
+  if (event.isComposing || event.defaultPrevented) return
+  // Form controls own their keystrokes; Enter there must not copy history.
+  if (showSettings.value || previewItem.value || (event.target instanceof HTMLElement && event.target.closest('button, select, textarea, [contenteditable="true"]'))) {
+    if (event.key === 'Escape') {
+      if (previewItem.value) closePreview()
+      else if (showSettings.value) showSettings.value = false
+    }
+    return
+  }
   if (event.ctrlKey && !event.altKey && !event.metaKey && /^[1-9]$/.test(event.key)) {
     const item = filteredItems.value[Number(event.key) - 1]
     if (item) {
@@ -1201,7 +1211,6 @@ function handleKeyboard(event: KeyboardEvent): void {
             class="history-item"
             :class="[`history-item-${item.kind}`, { selected: selectedIndex === index, pinned: item.pinned }]"
             @mouseenter="selectedIndex = index"
-            @dblclick="copyItem(item)"
           >
             <button class="item-main" type="button" @click="copyItem(item)">
               <span v-if="item.kind === 'image'" class="image-item-layout">
@@ -1237,6 +1246,7 @@ function handleKeyboard(event: KeyboardEvent): void {
               </template>
             </button>
 
+            <button class="icon-button small compact-preview" type="button" title="预览和操作" @click.stop="openPreview(item)"><Ellipsis :size="16" /></button>
             <div class="item-actions">
               <button class="icon-button small" type="button" title="预览" @click.stop="openPreview(item)">
                 <Eye :size="16" />
@@ -1278,7 +1288,7 @@ function handleKeyboard(event: KeyboardEvent): void {
 
     <transition name="modal">
       <div v-if="previewItem" class="modal-backdrop" @click.self="closePreview">
-          <section class="preview-modal" aria-label="历史预览">
+          <section ref="previewDialog" tabindex="-1" class="preview-modal" role="dialog" aria-modal="true" aria-label="历史预览" @keydown="containDialogFocus" @keydown.esc="closePreview">
             <header class="preview-header">
               <div>
                 <strong>{{ createItemTitle(previewItem) }}</strong>

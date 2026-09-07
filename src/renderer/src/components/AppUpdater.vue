@@ -4,6 +4,7 @@ import { Check, CheckCircle2, Clipboard, Download, ExternalLink, RefreshCw, Rota
 import { useAppUpdater } from '../composables/useAppUpdater'
 import { getLightClipApi } from '../runtime'
 import { parseReleaseNotes } from '../updater-utils'
+import { containDialogFocus } from '../dialog-focus'
 
 /** Presentation options for hosts that provide their own updater action. */
 defineProps<{
@@ -27,11 +28,13 @@ const {
 const lightClip = getLightClipApi()
 
 /** Allows title-bar actions to open the same persistent updater instance. */
-defineExpose({ checkForUpdate })
+defineExpose({ checkForUpdate, status })
 
 const releasePageUrl = 'https://github.com/leaf-zly/lightclip/releases/latest'
 const downloadUrl = computed(() => releasePageUrl)
 const closeButton = ref<HTMLButtonElement | null>(null)
+const dialogElement = ref<HTMLElement | null>(null)
+let previousFocus: HTMLElement | null = null
 const copied = ref(false)
 const releaseNotes = computed(() => parseReleaseNotes(update.value?.body))
 const hasReleaseNotes = computed(() => releaseNotes.value.summary.length > 0 || releaseNotes.value.sections.length > 0)
@@ -39,8 +42,11 @@ const hasReleaseNotes = computed(() => releaseNotes.value.summary.length > 0 || 
 watch(dialogOpen, async (open) => {
   copied.value = false
   if (open) {
+    previousFocus = document.activeElement as HTMLElement | null
     await nextTick()
-    closeButton.value?.focus()
+    dialogElement.value?.focus()
+  } else {
+    if (previousFocus?.isConnected) previousFocus.focus()
   }
 })
 
@@ -51,7 +57,12 @@ async function openReleasePage(): Promise<void> {
 
 /** Copies the current release download URL to the system clipboard. */
 async function copyReleaseUrl(): Promise<void> {
-  await navigator.clipboard?.writeText(downloadUrl.value)
+  try {
+    await navigator.clipboard.writeText(downloadUrl.value)
+  } catch {
+    errorMessage.value = '复制链接失败，请使用浏览器下载'
+    return
+  }
   copied.value = true
   window.setTimeout(() => {
     copied.value = false
@@ -60,6 +71,7 @@ async function copyReleaseUrl(): Promise<void> {
 
 /** Closes the dialog with Escape when an update is not actively transferring. */
 function handleDialogKeydown(event: KeyboardEvent): void {
+  containDialogFocus(event)
   if (event.key === 'Escape') {
     closeDialog()
   }
@@ -81,7 +93,7 @@ function handleDialogKeydown(event: KeyboardEvent): void {
 
   <Transition name="modal">
     <div v-if="dialogOpen" class="modal-backdrop updater-backdrop" @click.self="closeDialog">
-      <section class="updater-dialog" role="dialog" aria-modal="true" aria-labelledby="updater-title" @keydown="handleDialogKeydown">
+      <section ref="dialogElement" tabindex="-1" class="updater-dialog" role="dialog" aria-modal="true" aria-labelledby="updater-title" @keydown="handleDialogKeydown">
         <header class="updater-header">
           <div class="updater-heading">
             <span class="updater-logo" aria-hidden="true"><RefreshCw :size="17" /></span>
@@ -105,9 +117,12 @@ function handleDialogKeydown(event: KeyboardEvent): void {
             </span>
             <div class="updater-status-copy">
               <span class="updater-eyebrow">{{ status === 'available' ? '准备更新' : status === 'error' ? '需要处理' : '更新服务' }}</span>
-              <strong v-if="update">发现新版本 <b>v{{ update.version }}</b></strong>
+              <strong v-if="status === 'error'">更新未完成</strong>
+              <strong v-else-if="status === 'checking'">正在检查更新</strong>
+              <strong v-else-if="status === 'downloading'">正在下载更新</strong>
+              <strong v-else-if="status === 'ready'">正在安装并重启</strong>
+              <strong v-else-if="update">发现新版本 <b>v{{ update.version }}</b></strong>
               <strong v-else-if="status === 'current'">当前已是最新版本</strong>
-              <strong v-else-if="status === 'error'">检查更新失败</strong>
               <strong v-else>正在检查更新</strong>
               <span v-if="update?.currentVersion">当前版本 v{{ update.currentVersion }}</span>
               <span v-else-if="status === 'checking'">

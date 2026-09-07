@@ -43,7 +43,12 @@ export function matchesTimeFilter(item: ClipboardItem, filter: HistoryTimeFilter
   if (filter === 'all') {
     return true
   }
-  const windowDays = filter === 'today' ? 1 : filter === 'week' ? 7 : 30
+  if (filter === 'today') {
+    const midnight = new Date(now)
+    midnight.setHours(0, 0, 0, 0)
+    return item.updatedAt >= midnight.getTime()
+  }
+  const windowDays = filter === 'week' ? 7 : 30
   return item.updatedAt >= now - windowDays * 24 * 60 * 60 * 1000
 }
 

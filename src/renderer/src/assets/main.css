@@ -1765,3 +1765,15 @@ kbd {
 .quick-actions button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 8px 10px; text-align: left; color: var(--text); background: transparent; font-size: 13px; border-radius: 5px; cursor: pointer; }
 .quick-actions button:hover { background: var(--accent-soft); }
 .quick-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.compact-preview { display: none; }
+.shell.interface-compact .compact-preview { display: grid; align-self: start; background: transparent; }
+.shell.interface-compact .history-item { grid-template-columns: minmax(0, 1fr) 30px; gap: 4px; }
+.preview-header > div { min-width: 0; }
+.preview-header strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-actions { flex-wrap: wrap; }
+.updater-version-badge { justify-self: start; }
+.shell.mode-dark { --accent-strong: color-mix(in srgb, var(--accent) 65%, #ffffff); }
+@media (prefers-color-scheme: dark) {
+  .shell.mode-system { --accent-strong: color-mix(in srgb, var(--accent) 65%, #ffffff); }
+}

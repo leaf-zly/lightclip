@@ -50,7 +50,7 @@ LightClip does not intentionally store:
 
 The app does not need network access to run. Development and packaging tools may access the network when installing dependencies or publishing releases, but the packaged application does not include a sync backend.
 
-When the user manually clicks update checking, LightClip requests the latest public GitHub Release metadata for this repository. Clipboard history is not sent with that request.
+LightClip checks GitHub Release metadata on startup at most once every six hours and when the user requests an update check. Installing an update downloads its signed package. Clipboard history is not sent with these requests.
 
 ## Sensitive Clipboard Content
 

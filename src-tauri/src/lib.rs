@@ -126,6 +126,7 @@ struct GuiThreadInfo {
 #[link(name = "user32")]
 extern "system" {
   fn GetForegroundWindow() -> WindowHandle;
+  fn GetClipboardSequenceNumber() -> u32;
   fn GetWindowThreadProcessId(window: WindowHandle, process_id: *mut u32) -> u32;
   fn GetGUIThreadInfo(thread_id: u32, info: *mut GuiThreadInfo) -> i32;
   fn ClientToScreen(window: WindowHandle, point: *mut NativePoint) -> i32;
@@ -230,6 +231,7 @@ struct AppState {
 struct HistoryItemUpsert {
   item: ClipboardItem,
   storage_bytes: u64,
+  retained_ids: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -487,12 +489,21 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 #[tauri::command]
-fn get_state(runtime: State<'_, AppRuntime>) -> AppState {
-  runtime.store.lock().expect("store lock poisoned").state_snapshot()
+async fn get_state(runtime: State<'_, AppRuntime>) -> Result<AppState, String> {
+  let runtime = runtime.inner().clone();
+  tauri::async_runtime::spawn_blocking(move || runtime.store.lock().expect("store lock poisoned").state_snapshot())
+    .await.map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<ClipboardItem> {
+async fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Result<CommandResult<ClipboardItem>, String> {
+  let runtime = runtime.inner().clone();
+  tauri::async_runtime::spawn_blocking(move || copy_item_impl(id, app, &runtime))
+    .await.map_err(|error| error.to_string())
+}
+
+/// Restores clipboard contents off the UI thread and reports input submission separately.
+fn copy_item_impl(id: String, app: AppHandle, runtime: &AppRuntime) -> CommandResult<ClipboardItem> {
   let (item, settings) = {
     let store = runtime.store.lock().expect("store lock poisoned");
     match store.get_item(&id) {
@@ -505,6 +516,7 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
   let write_signature = match write_item_to_clipboard(&item, &settings) {
     Ok(signature) => signature,
     Err(error) => {
+      if let Some(window) = app.get_webview_window("main") { let _ = window.show(); }
       return err(format!("复制失败: {error}"));
     }
   };
@@ -515,14 +527,21 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
   }
 
   if settings.paste_after_copy {
+    let _ = app.emit("paste-status", serde_json::json!({"status": "started"}));
     let target = runtime.paste_target.lock().ok().and_then(|mut value| value.take());
     if let Some(target) = target {
+      let paste_app = app.clone();
       // Paste as soon as the clipboard is ready. Copy-count persistence can be expensive for image-heavy stores.
       thread::spawn(move || {
         if let Err(error) = paste_to_target(&target) {
           eprintln!("LightClip automatic paste failed: {error:#}");
+          let _ = paste_app.emit("paste-status", serde_json::json!({"status": "failed", "message": "自动粘贴失败，内容已复制，可手动粘贴"}));
+        } else {
+          let _ = paste_app.emit("paste-status", serde_json::json!({"status": "success", "message": "已发送粘贴指令"}));
         }
       });
+    } else {
+      let _ = app.emit("paste-status", serde_json::json!({"status": "failed", "message": "没有可用的目标窗口，内容已复制"}));
     }
   }
 
@@ -532,6 +551,7 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
       Ok(Some(item)) => Some(HistoryItemUpsert {
         item,
         storage_bytes: store.storage_bytes(),
+        retained_ids: store.state.items.iter().map(|item| item.id().to_string()).collect(),
       }),
       Ok(None) | Err(_) => None,
     }
@@ -545,7 +565,10 @@ fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> Comm
 
 #[tauri::command]
 fn delete_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -> CommandResult<()> {
-  let changed = runtime.store.lock().expect("store lock poisoned").delete_item(&id);
+  let changed = match runtime.store.lock().expect("store lock poisoned").delete_item(&id) {
+    Ok(changed) => changed,
+    Err(error) => return err(error.to_string()),
+  };
   if changed {
     broadcast_state(&app, &runtime);
   }
@@ -823,6 +846,7 @@ fn quit_app(app: AppHandle) {
 #[serde(rename_all = "camelCase")]
 struct AppSettingsPatch {
   capture_enabled: Option<bool>,
+  #[serde(default, deserialize_with = "deserialize_pause_until")]
   capture_paused_until: Option<Option<i64>>,
   launch_at_login: Option<bool>,
   max_history_items: Option<usize>,
@@ -846,6 +870,11 @@ struct AppSettingsPatch {
   automatic_backups: Option<bool>,
   backup_interval_hours: Option<u64>,
   backup_keep_count: Option<usize>,
+}
+
+/// Distinguishes an omitted pause patch from explicit null (resume immediately).
+fn deserialize_pause_until<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<i64>>, D::Error> {
+  Option::<i64>::deserialize(deserializer).map(Some)
 }
 
 impl AppSettingsPatch {
@@ -1063,14 +1092,17 @@ impl ClipboardStore {
     Ok(result)
   }
 
-  fn delete_item(&mut self, id: &str) -> bool {
-    let before = self.state.items.len();
+  fn delete_item(&mut self, id: &str) -> anyhow::Result<bool> {
+    let before = self.state.items.clone();
     self.state.items.retain(|item| item.id() != id);
-    let changed = before != self.state.items.len();
+    let changed = before.len() != self.state.items.len();
     if changed {
-      let _ = self.save();
+      if let Err(error) = self.save() {
+        self.state.items = before;
+        return Err(error);
+      }
     }
-    changed
+    Ok(changed)
   }
 
   fn toggle_pin(&mut self, id: &str) -> anyhow::Result<Option<ClipboardItem>> {
@@ -1228,30 +1260,37 @@ impl ClipboardStore {
   fn move_storage_directory(&mut self, directory: &str) -> anyhow::Result<StorageLocationResult> {
     let target = PathBuf::from(directory);
     fs::create_dir_all(&target)?;
-    let probe = target.join(".lightclip-write-test");
+    let probe = target.join(format!(".lightclip-write-test-{}", Uuid::new_v4()));
     fs::write(&probe, "")?;
     let _ = fs::remove_file(probe);
 
+    let previous = self.storage_directory.clone();
     self.set_storage_directory(target.clone());
-    self.save()?;
-    self.write_storage_config(&target)?;
+    if let Err(error) = self.save().and_then(|_| self.write_storage_config(&target)) {
+      self.set_storage_directory(previous);
+      return Err(error);
+    }
     Ok(self.storage_location())
   }
 
   fn reset_storage_directory(&mut self) -> anyhow::Result<StorageLocationResult> {
     let target = self.default_storage_directory.clone();
+    let previous = self.storage_directory.clone();
     self.set_storage_directory(target.clone());
-    self.save()?;
-    self.write_storage_config(&target)?;
+    if let Err(error) = self.save().and_then(|_| self.write_storage_config(&target)) {
+      self.set_storage_directory(previous);
+      return Err(error);
+    }
     Ok(self.storage_location())
   }
 
   fn can_capture_text(&self, text: &str) -> bool {
     let settings = &self.state.settings;
+    let text_length = text.encode_utf16().count();
     settings.capture_enabled
       && !is_capture_temporarily_paused(settings.capture_paused_until)
-      && text.len() >= settings.min_text_length
-      && text.len() <= settings.max_text_length
+      && text_length >= settings.min_text_length
+      && text_length <= settings.max_text_length
       && !is_sensitive_text(text, settings)
   }
 
@@ -1327,24 +1366,23 @@ impl ClipboardStore {
       return;
     }
 
-    loop {
-      let estimated_bytes = serde_json::to_vec(&self.state).map(|payload| payload.len() as u64).unwrap_or(0);
-      if estimated_bytes <= limit {
-        break;
-      }
-      let Some(index) = self
-        .state
-        .items
-        .iter()
-        .enumerate()
-        .filter(|(_, item)| !item.pinned())
-        .min_by_key(|(_, item)| item.updated_at())
-        .map(|(index, _)| index)
-      else {
-        break;
-      };
-      self.state.items.remove(index);
+    let Ok(encoded) = serde_json::to_vec(&self.state) else { return; };
+    let mut estimated_bytes = encoded.len() as u64;
+    if estimated_bytes <= limit { return; }
+    // Serialize each candidate once, rather than the entire image-heavy store
+    // again for every eviction. JSON array commas account for the extra byte.
+    let mut candidates: Vec<_> = self.state.items.iter().filter(|item| !item.pinned()).collect();
+    candidates.sort_by_key(|item| item.updated_at());
+    let mut remaining = self.state.items.len();
+    let mut removed = HashSet::new();
+    for item in candidates {
+      if estimated_bytes <= limit { break; }
+      let Ok(payload) = serde_json::to_vec(item) else { continue; };
+      estimated_bytes = estimated_bytes.saturating_sub(payload.len() as u64 + u64::from(remaining > 1));
+      remaining -= 1;
+      removed.insert(item.id().to_string());
     }
+    self.state.items.retain(|item| !removed.contains(item.id()));
   }
 
   fn load_storage_config(&mut self) {
@@ -1390,13 +1428,17 @@ impl ClipboardStore {
   fn write_storage_config(&self, directory: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(&self.default_storage_directory)?;
     if directory == self.default_storage_directory {
-      let _ = fs::remove_file(&self.storage_config_path);
+      match fs::remove_file(&self.storage_config_path) {
+        Ok(()) => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error.into()),
+      }
       return Ok(());
     }
     let config = StorageConfig {
       storage_directory: Some(directory.to_string_lossy().to_string()),
     };
-    fs::write(&self.storage_config_path, serde_json::to_string_pretty(&config)?)?;
+    write_atomic(&self.storage_config_path, serde_json::to_string_pretty(&config)?.as_bytes())?;
     Ok(())
   }
 
@@ -1515,7 +1557,7 @@ impl ClipboardItem {
 
   fn increment_copy_count(&mut self) {
     match self {
-      Self::Text { copy_count, .. } | Self::Image { copy_count, .. } | Self::File { copy_count, .. } => *copy_count += 1,
+      Self::Text { copy_count, .. } | Self::Image { copy_count, .. } | Self::File { copy_count, .. } => *copy_count = copy_count.saturating_add(1),
     }
   }
 
@@ -1533,16 +1575,31 @@ impl ClipboardItem {
 }
 
 fn start_clipboard_watcher(app: AppHandle, runtime: AppRuntime) {
-  thread::spawn(move || loop {
+  thread::spawn(move || {
+    let mut last_sequence = None;
+    loop {
     thread::sleep(Duration::from_millis(650));
     let settings = runtime
       .store
       .lock()
       .map(|store| store.state.settings.clone())
       .unwrap_or_else(|_| default_settings());
+    // Skip unchanged clipboard payloads before decoding images or starting file helpers.
+    #[cfg(windows)]
+    let sequence = unsafe { GetClipboardSequenceNumber() };
+    #[cfg(not(windows))]
+    let sequence = 0;
+    if !settings.capture_enabled || is_capture_temporarily_paused(settings.capture_paused_until) {
+      last_sequence = Some(sequence);
+      continue;
+    }
+    if sequence != 0 && last_sequence == Some(sequence) { continue; }
     let Ok(snapshot) = read_clipboard_snapshot(&settings) else {
       continue;
     };
+    #[cfg(windows)]
+    if sequence != unsafe { GetClipboardSequenceNumber() } { continue; }
+    last_sequence = Some(sequence);
     let signature = snapshot.signature.clone();
     let should_record = runtime
       .last_clipboard_signature
@@ -1562,10 +1619,12 @@ fn start_clipboard_watcher(app: AppHandle, runtime: AppRuntime) {
       store.record_snapshot(snapshot).ok().flatten().map(|item| HistoryItemUpsert {
         item,
         storage_bytes: store.storage_bytes(),
+        retained_ids: store.state.items.iter().map(|item| item.id().to_string()).collect(),
       })
     });
     if let Some(update) = history_update {
       emit_history_item_upserted(&app, update);
+    }
     }
   });
 }
@@ -2354,11 +2413,9 @@ fn write_atomic(path: &Path, payload: &[u8]) -> anyhow::Result<()> {
     file.write_all(payload)?;
     file.sync_all()?;
 
-    // std::fs::rename cannot replace an existing destination on Windows. A readable
-    // backup is already written before this short replacement window.
-    if path.exists() {
-      fs::remove_file(path)?;
-    }
+    drop(file);
+    // Rust uses replacement rename on Windows too. Never delete the valid file
+    // first: a sharing violation or interrupted rename must leave it readable.
     fs::rename(&temporary_path, path)?;
     Ok(())
   })();
@@ -2686,6 +2743,63 @@ fn err<T: Serialize>(message: impl Into<String>) -> CommandResult<T> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn explicit_null_resumes_capture_but_omitted_pause_preserves_it() {
+    let resume: AppSettingsPatch = serde_json::from_value(serde_json::json!({"capturePausedUntil": null})).unwrap();
+    assert_eq!(resume.capture_paused_until, Some(None));
+    let appearance: AppSettingsPatch = serde_json::from_value(serde_json::json!({"themeMode": "dark"})).unwrap();
+    assert_eq!(appearance.capture_paused_until, None);
+  }
+
+  #[test]
+  fn atomic_write_replaces_an_existing_file_without_leaving_temporary_files() {
+    let root = std::env::temp_dir().join(format!("lightclip-atomic-test-{}", Uuid::new_v4()));
+    fs::create_dir_all(&root).unwrap();
+    let file = root.join("settings.json");
+    write_atomic(&file, b"original").unwrap();
+    write_atomic(&file, b"replacement").unwrap();
+    assert_eq!(fs::read(&file).unwrap(), b"replacement");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn storage_budget_matches_serialized_bytes_and_preserves_pins() {
+    let root = std::env::temp_dir().join(format!("lightclip-budget-test-{}", Uuid::new_v4()));
+    let mut store = ClipboardStore::new(root.clone()).unwrap();
+    store.state.settings.max_storage_bytes = 0;
+    let pinned = store.record_text("keep this snippet").unwrap().unwrap();
+    store.toggle_pin(pinned.id()).unwrap();
+    for index in 0..20 { store.record_text(&format!("{index} {}", "payload ".repeat(32))).unwrap(); }
+    let before = serde_json::to_vec(&store.state).unwrap().len() as u64;
+    store.state.settings.max_storage_bytes = before / 2;
+    store.trim_storage_budget();
+    assert!(serde_json::to_vec(&store.state).unwrap().len() as u64 <= before / 2);
+    assert!(store.get_item(pinned.id()).is_some());
+    assert!(store.state.items.len() < 21);
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn retention_keeps_pins_and_delete_failure_preserves_history() {
+    let root = std::env::temp_dir().join(format!("lightclip-audit-{}", Uuid::new_v4()));
+    let mut store = ClipboardStore::new(root.clone()).unwrap();
+    store.state.settings.max_history_items = 1;
+    let pinned = store.record_text("pinned example").unwrap().unwrap();
+    store.toggle_pin(pinned.id()).unwrap();
+    let old = store.record_text("old example").unwrap().unwrap();
+    let latest = store.record_text("latest example").unwrap().unwrap();
+    assert!(store.get_item(pinned.id()).is_some());
+    assert!(store.get_item(old.id()).is_none());
+    assert!(store.get_item(latest.id()).is_some());
+    let invalid_directory = root.join("not-a-directory");
+    fs::write(&invalid_directory, "fixture").unwrap();
+    store.storage_directory = invalid_directory;
+    assert!(store.delete_item(latest.id()).is_err());
+    assert!(store.get_item(latest.id()).is_some());
+    fs::remove_dir_all(root).unwrap();
+  }
 
   #[test]
   fn visual_patches_do_not_request_history_refresh() {

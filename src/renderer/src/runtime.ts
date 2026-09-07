@@ -10,6 +10,7 @@ import type {
   HistoryImportResult,
   HistoryItemUpsert,
   LightClipApi,
+  PasteStatusUpdate,
   StorageLocationResult,
   UpdateCheckResult,
 } from '../../shared/types'
@@ -102,6 +103,15 @@ const tauriLightClipApi: LightClipApi = {
       disposed = true
       unlisten?.()
     }
+  },
+  onPasteStatus: (callback) => {
+    let unlisten: (() => void) | null = null
+    let disposed = false
+    void listen<PasteStatusUpdate>('paste-status', (event) => callback(event.payload)).then((stop) => {
+      if (disposed) stop()
+      else unlisten = stop
+    })
+    return () => { disposed = true; unlisten?.() }
   },
 }
 

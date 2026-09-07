@@ -25,13 +25,20 @@ export function useAppUpdater() {
   let startupTimer: number | null = null
 
   const progressPercent = computed(() => calculateDownloadPercent(downloadedBytes.value, totalBytes.value))
-  const isBusy = computed(() => status.value === 'checking' || status.value === 'downloading')
+  const isBusy = computed(() => status.value === 'checking' || status.value === 'downloading' || status.value === 'ready')
 
   /** Checks the configured signed update endpoint. */
   async function checkForUpdate(interactive = true): Promise<void> {
-    if (isBusy.value || !('__TAURI_INTERNALS__' in window)) {
+    if (interactive) dialogOpen.value = true
+    if (isBusy.value) return
+    if (!('__TAURI_INTERNALS__' in window)) {
+      status.value = 'error'
+      errorMessage.value = 'Online installation is unavailable in this runtime. Please download from the release page.'
       return
     }
+    const previousUpdate = update.value
+    update.value = null
+    void previousUpdate?.close().catch(() => undefined)
     status.value = 'checking'
     errorMessage.value = ''
     if (!interactive) {
@@ -82,10 +89,10 @@ export function useAppUpdater() {
           totalBytes.value = event.data.contentLength
         } else if (event.event === 'Progress') {
           downloadedBytes.value += event.data.chunkLength
-        } else {
-          status.value = 'ready'
         }
       })
+      // Transfer completion precedes installation; keep the dialog busy throughout.
+      status.value = 'ready'
       const { relaunch } = await import('@tauri-apps/plugin-process')
       await relaunch()
     } catch (error) {

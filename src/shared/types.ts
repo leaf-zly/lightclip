@@ -150,6 +150,8 @@ export interface PasteStatusUpdate {
 
 /** Incremental history update emitted after one clipboard record is inserted or refreshed. */
 export interface HistoryItemUpsert {
+  /** Canonical remaining IDs after retention cleanup; omitted by older runtimes. */
+  retainedIds?: string[]
   /** The canonical persisted record after capture or copy-count updates. */
   item: ClipboardItem
   /** Current compressed store size after the record has been persisted. */
