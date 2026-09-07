@@ -6,6 +6,8 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.3.2] - 2026-09-07
+
 ### Fixed
 
 - Moves pin/delete persistence off the Windows UI thread and avoids full-history broadcasts for these actions.

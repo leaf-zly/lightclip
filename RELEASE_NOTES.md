@@ -1,32 +1,31 @@
-# LightClip v2.3.1
+# LightClip v2.3.2
 
-This maintenance release improves panel responsiveness, clipboard reliability and interface consistency. Existing history and settings remain compatible.
+This maintenance release addresses preview-button stalls and improves long-content and image previews. Existing history and settings remain compatible.
 
 ## Responsiveness
 
-- Keeps layout and theme changes responsive by moving settings persistence off the native UI thread and avoiding full-history broadcasts.
-- Runs state loading and clipboard copying on blocking workers.
-- Skips unchanged Windows clipboard image/file payloads and reduces retention-cleanup serialization.
+- Moves pin/delete persistence off the Windows UI thread and avoids full-history broadcasts for these actions.
+- Avoids cloning the complete image history when deleting one record.
+- Removes expensive background blur from the history preview overlay.
 
-## Interface And Updates
+## Interface
 
-- Refines icon filters, tooltips, the title-bar mark, compact actions, scrollbars and dark-theme contrast.
-- Adds compact record preview/actions and keeps keyboard selections visible.
-- Uses one updater dialog from settings and the title bar, with focus containment and reliable installation busy state.
-- Fixes stale update metadata, copy-link error feedback and accidental background copies from dialogs.
+- Removes horizontal scrolling from history and preview surfaces.
+- Truncates long record titles and file paths with ellipsis and full-text hover labels; text previews wrap long lines.
+- Adds delayed image hover previews constrained to the window. Previews dismiss on scrolling, pointer exit, Escape and window blur.
+- Adds pending-action feedback and duplicate-action protection to preview buttons.
 
 ## Reliability
 
-- Fixes temporary pause clearing, retained-history synchronization and invalid byte counts.
-- Restores in-memory history and previous storage locations on persistence failures.
-- Avoids deleting valid stored files before replacement.
-- Reports paste-command submission honestly and provides failure feedback; target editor acceptance can vary.
+- Restores pin state when saving fails.
+- Keeps the preview and record available after failed deletion, with retry feedback.
+- Keeps modal dismissal available while persistence is pending.
 
 ## Verification And Limitations
 
-The audited source passed 13 frontend tests, 20 Windows native tests, eight responsive light/dark browser cases using 936 synthetic records, and packaged Windows shortcut/caret-placement/textbox-paste smoke tests. Release packaging reruns the source CI gate and packaged smoke test before publication.
+The source passed 13 frontend tests, 21 Windows native tests and eight responsive light/dark browser cases using 936 synthetic records. Browser checks cover delayed/failed actions, long unbroken text, long file paths and image-hover placement. Release packaging reruns the source CI gate and packaged shortcut/caret-placement/textbox-paste smoke test before publication.
 
-Browser updater tests use mocked installation. Real previous-version upgrade installation, diverse editors and multi-monitor/DPI combinations are not fully certified. Image thumbnail caching, full list virtualization, edit-before-copy, filtered export and Tauri data encryption remain open; see the [audit report](https://github.com/leaf-zly/lightclip/blob/v2.3.1/docs/AUDIT-2026-09-07.md).
+Browser tests use mocked native responses. Performance with the user's actual history and real previous-version upgrade installation have not been measured in this release. Diverse editors and multi-monitor/DPI combinations are not fully certified. Image thumbnail caching, full list virtualization, edit-before-copy, filtered export and Tauri data encryption remain open; see the [audit report](https://github.com/leaf-zly/lightclip/blob/v2.3.2/docs/AUDIT-2026-09-07.md).
 
 ## Downloads
 
@@ -34,4 +33,4 @@ Browser updater tests use mocked installation. Real previous-version upgrade ins
 - The portable executable is available separately.
 - `latest.json` and `.sig` files are updater metadata, not installers. Updater signatures are not Windows Authenticode code signing; unsigned Windows binaries may still trigger antivirus or SmartScreen warnings.
 
-[Download LightClip v2.3.1](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.1)
+[Download LightClip v2.3.2](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.2)
