@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 use std::ffi::c_void;
 use std::{
   borrow::Cow,
-  collections::HashSet,
+  collections::{HashMap, HashSet},
   fs,
   io::{Cursor, Read, Write},
   path::{Path, PathBuf},
   process::Command,
   sync::{Arc, Mutex},
   thread,
-  time::Duration,
+  time::{Duration, Instant},
 };
 use tauri::{
   menu::{Menu, MenuItem},
@@ -22,9 +22,11 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use uuid::Uuid;
 mod updater_install;
+mod paste_delivery;
 
 const STORE_VERSION: u32 = 1;
 const STORE_FILE_NAME: &str = "lightclip-store.json.br";
+const USAGE_FILE_NAME: &str = "lightclip-usage.json";
 const BACKUP_STORE_FILE_NAME: &str = "lightclip-store.json.br.bak";
 const ROLLING_BACKUP_DIRECTORY_NAME: &str = "backups";
 const LEGACY_STORE_FILE_NAME: &str = "lightclip-store.json";
@@ -137,20 +139,13 @@ extern "system" {
   fn IsIconic(window: WindowHandle) -> i32;
   fn ShowWindowAsync(window: WindowHandle, command: i32) -> i32;
   fn SetForegroundWindow(window: WindowHandle) -> i32;
-  fn BringWindowToTop(window: WindowHandle) -> i32;
-  fn SetFocus(window: WindowHandle) -> WindowHandle;
-  fn AttachThreadInput(attach_thread: u32, attach_to_thread: u32, attach: i32) -> i32;
+  fn GetAncestor(window: WindowHandle, flags: u32) -> WindowHandle;
+  fn GetAsyncKeyState(virtual_key: i32) -> i16;
   fn MonitorFromWindow(window: WindowHandle, flags: u32) -> WindowHandle;
   fn MonitorFromPoint(point: NativePoint, flags: u32) -> WindowHandle;
   fn GetMonitorInfoW(monitor: WindowHandle, info: *mut NativeMonitorInfo) -> i32;
   fn GetDpiForWindow(window: WindowHandle) -> u32;
   fn SendInput(input_count: u32, inputs: *const NativeInput, input_size: i32) -> u32;
-}
-
-#[cfg(windows)]
-#[link(name = "kernel32")]
-extern "system" {
-  fn GetCurrentThreadId() -> u32;
 }
 
 #[cfg(windows)]
@@ -170,6 +165,7 @@ const INVALID_CARET_COORDINATE: i32 = i32::MIN;
 #[derive(Clone)]
 struct AppRuntime {
   store: Arc<Mutex<ClipboardStore>>,
+  copy_transaction: Arc<Mutex<()>>,
   paste_target: Arc<Mutex<Option<String>>>,
   last_clipboard_signature: Arc<Mutex<String>>,
 }
@@ -379,6 +375,16 @@ struct ClipboardStore {
   state: PersistedStore,
 }
 
+/// Small, content-free usage sidecar; full store writes fold these values back in.
+/// Creation time prevents a reused/imported ID from inheriting another record's usage.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ItemUsage {
+  created_at: i64,
+  updated_at: i64,
+  copy_count: u32,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -394,6 +400,7 @@ pub fn run() {
 
       let runtime = AppRuntime {
         store: Arc::new(Mutex::new(store)),
+        copy_transaction: Arc::new(Mutex::new(())),
         paste_target: Arc::new(Mutex::new(None)),
         last_clipboard_signature: Arc::new(Mutex::new(String::new())),
       };
@@ -511,8 +518,15 @@ async fn copy_item(id: String, app: AppHandle, runtime: State<'_, AppRuntime>) -
     .await.map_err(|error| error.to_string())
 }
 
-/// Restores clipboard contents off the UI thread and reports input submission separately.
+/// Runs one clipboard/paste transaction off the UI thread, rejecting overlapping writes.
+/// Diagnostics contain only durations and failure categories, never clipboard contents.
 fn copy_item_impl(id: String, app: AppHandle, runtime: &AppRuntime) -> CommandResult<ClipboardItem> {
+  let started = Instant::now();
+  let Ok(_transaction) = runtime.copy_transaction.try_lock() else {
+    return err("上一条复制仍在处理中，请稍后重试");
+  };
+  // Freeze the target before any slow store work or asynchronous window hiding.
+  let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
   let (item, settings) = {
     let store = runtime.store.lock().expect("store lock poisoned");
     match store.get_item(&id) {
@@ -520,39 +534,49 @@ fn copy_item_impl(id: String, app: AppHandle, runtime: &AppRuntime) -> CommandRe
       None => return err("记录不存在"),
     }
   };
+  let lookup_ms = started.elapsed().as_millis();
 
-  let _ = hide_panel_impl(&app);
   let write_signature = match write_item_to_clipboard(&item, &settings) {
     Ok(signature) => signature,
     Err(error) => {
-      if let Some(window) = app.get_webview_window("main") { let _ = window.show(); }
       return err(format!("复制失败: {error}"));
     }
   };
+  #[cfg(windows)]
+  let clipboard_sequence = unsafe { GetClipboardSequenceNumber() };
+  #[cfg(not(windows))]
+  let clipboard_sequence = 0;
   if !write_signature.is_empty() {
     if let Ok(mut signature) = runtime.last_clipboard_signature.lock() {
       *signature = write_signature;
     }
   }
+  let clipboard_ms = started.elapsed().as_millis().saturating_sub(lookup_ms);
+
+  if let Err(error) = hide_panel_impl(&app) {
+    log::warn!("paste stage=hide failed: {error}");
+    return err("内容已复制，但面板未能关闭，请手动粘贴");
+  }
 
   if settings.paste_after_copy {
     let _ = app.emit("paste-status", serde_json::json!({"status": "started"}));
-    let target = runtime.paste_target.lock().ok().and_then(|mut value| value.take());
     if let Some(target) = target {
-      let paste_app = app.clone();
-      // Paste as soon as the clipboard is ready. Copy-count persistence can be expensive for image-heavy stores.
-      thread::spawn(move || {
-        if let Err(error) = paste_to_target(&target) {
-          eprintln!("LightClip automatic paste failed: {error:#}");
-          let _ = paste_app.emit("paste-status", serde_json::json!({"status": "failed", "message": "自动粘贴失败，内容已复制，可手动粘贴"}));
-        } else {
-          let _ = paste_app.emit("paste-status", serde_json::json!({"status": "success", "message": "已发送粘贴指令"}));
+      // This command already runs on a worker. Keep input inside its transaction
+      // so another selection cannot replace the clipboard before Ctrl+V is sent.
+      match wait_until_panel_hidden(&app).and_then(|_| paste_to_target(&target, clipboard_sequence)) {
+        Err(error) => {
+          log::warn!("paste stage=delivery failed: {error:#}");
+          let _ = app.emit("paste-status", serde_json::json!({"status": "failed", "message": "自动粘贴未完成，请松开快捷键并确认目标输入框；内容可手动粘贴"}));
         }
-      });
+        Ok(()) => {
+          let _ = app.emit("paste-status", serde_json::json!({"status": "success", "message": "已发送粘贴指令"}));
+        }
+      }
     } else {
       let _ = app.emit("paste-status", serde_json::json!({"status": "failed", "message": "没有可用的目标窗口，内容已复制"}));
     }
   }
+  let delivery_ms = started.elapsed().as_millis().saturating_sub(lookup_ms + clipboard_ms);
 
   let history_update = {
     let mut store = runtime.store.lock().expect("store lock poisoned");
@@ -562,12 +586,17 @@ fn copy_item_impl(id: String, app: AppHandle, runtime: &AppRuntime) -> CommandRe
         storage_bytes: store.storage_bytes(),
         retained_ids: store.state.items.iter().map(|item| item.id().to_string()).collect(),
       }),
-      Ok(None) | Err(_) => None,
+      Ok(None) => None,
+      Err(error) => {
+        log::warn!("paste stage=usage-save failed: {error}");
+        None
+      }
     }
   };
   if let Some(update) = history_update {
     emit_history_item_upserted(&app, update);
   }
+  log::info!("paste timing lookup_ms={lookup_ms} clipboard_ms={clipboard_ms} delivery_ms={delivery_ms} total_ms={}", started.elapsed().as_millis());
 
   ok(item)
 }
@@ -937,6 +966,7 @@ impl ClipboardStore {
         persisted.settings = normalize_settings(persisted.settings);
         persisted.items = persisted.items.into_iter().filter(ClipboardItem::is_valid).collect();
         self.state = persisted;
+        self.load_usage();
         self.trim_overflow();
         self.save()?;
       }
@@ -1100,16 +1130,42 @@ impl ClipboardStore {
     self.state.items.iter().find(|item| item.id() == id).cloned()
   }
 
+  /// Persists only usage metadata, avoiding image recompression on every selection.
+  /// Rolls back memory on write failure; clipboard delivery is independent of usage accounting.
   fn touch_copied_item(&mut self, id: &str) -> anyhow::Result<Option<ClipboardItem>> {
-    let result = self.state.items.iter_mut().find(|item| item.id() == id).map(|item| {
-      item.increment_copy_count();
-      item.set_updated_at(now_ms());
-      item.clone()
-    });
-    if result.is_some() {
-      self.save()?;
+    let Some(index) = self.state.items.iter().position(|item| item.id() == id) else { return Ok(None); };
+    let before = self.state.items[index].usage();
+    self.state.items[index].increment_copy_count();
+    self.state.items[index].set_updated_at(now_ms().max(before.updated_at.saturating_add(1)));
+    let usage: HashMap<_, _> = self.state.items.iter().map(|item| (item.id(), item.usage())).collect();
+    let result = serde_json::to_vec(&usage).map_err(anyhow::Error::from)
+      .and_then(|bytes| write_atomic(&self.storage_directory.join(USAGE_FILE_NAME), &bytes));
+    if let Err(error) = result {
+      self.state.items[index].set_usage(&before);
+      return Err(error);
     }
-    Ok(result)
+    Ok(Some(self.state.items[index].clone()))
+  }
+
+  /// Replays newer usage only for records still present in the authoritative store.
+  fn load_usage(&mut self) {
+    let path = self.storage_directory.join(USAGE_FILE_NAME);
+    let usage = fs::read(path).map_err(anyhow::Error::from)
+      .and_then(|bytes| Ok(serde_json::from_slice::<HashMap<String, ItemUsage>>(&bytes)?));
+    match usage {
+      Ok(usage) => {
+        for item in &mut self.state.items {
+          if let Some(saved) = usage.get(item.id()) {
+            let current = item.usage();
+            if saved.created_at == current.created_at && saved.updated_at > current.updated_at {
+              item.set_usage(&ItemUsage { copy_count: saved.copy_count.max(current.copy_count), ..saved.clone() });
+            }
+          }
+        }
+      }
+      Err(error) if error.downcast_ref::<std::io::Error>().is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
+      Err(error) => log::warn!("Ignoring unreadable usage metadata: {error}"),
+    }
   }
 
   fn delete_item(&mut self, id: &str) -> anyhow::Result<bool> {
@@ -1461,10 +1517,11 @@ impl ClipboardStore {
   }
 
   fn storage_bytes(&self) -> u64 {
-    fs::metadata(&self.file_path)
+    let history_bytes = fs::metadata(&self.file_path)
       .or_else(|_| fs::metadata(&self.legacy_file_path))
       .map(|metadata| metadata.len())
-      .unwrap_or(0)
+      .unwrap_or(0);
+    history_bytes.saturating_add(fs::metadata(self.storage_directory.join(USAGE_FILE_NAME)).map(|value| value.len()).unwrap_or(0))
   }
 
   fn quarantine_unreadable_store_files(&self) {
@@ -1490,6 +1547,9 @@ impl ClipboardStore {
       let _ = fs::copy(&self.file_path, &self.backup_file_path);
     }
     write_atomic(&self.file_path, &encoded)?;
+    // Delete only after the authoritative write succeeds. Leftover older usage
+    // is harmless because replay requires a strictly newer timestamp.
+    let _ = fs::remove_file(self.storage_directory.join(USAGE_FILE_NAME));
     let _ = fs::remove_file(&self.legacy_file_path);
     Ok(())
   }
@@ -1535,6 +1595,29 @@ impl ClipboardStore {
 }
 
 impl ClipboardItem {
+  /// Extracts metadata without cloning text, file paths or image data.
+  fn usage(&self) -> ItemUsage {
+    match self {
+      Self::Text { created_at, updated_at, copy_count, .. }
+      | Self::Image { created_at, updated_at, copy_count, .. }
+      | Self::File { created_at, updated_at, copy_count, .. } => ItemUsage {
+        created_at: *created_at, updated_at: *updated_at, copy_count: *copy_count,
+      },
+    }
+  }
+
+  /// Restores mutable counters only; record identity and clipboard contents are unchanged.
+  fn set_usage(&mut self, usage: &ItemUsage) {
+    match self {
+      Self::Text { updated_at, copy_count, .. }
+      | Self::Image { updated_at, copy_count, .. }
+      | Self::File { updated_at, copy_count, .. } => {
+        *updated_at = usage.updated_at;
+        *copy_count = usage.copy_count;
+      }
+    }
+  }
+
   fn id(&self) -> &str {
     match self {
       Self::Text { id, .. } | Self::Image { id, .. } | Self::File { id, .. } => id,
@@ -1649,10 +1732,9 @@ fn start_clipboard_watcher(app: AppHandle, runtime: AppRuntime) {
 
 fn show_panel(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()> {
   let target = capture_paste_target().ok();
-  if let Some(target_value) = target.as_ref() {
-    if let Ok(mut paste_target) = runtime.paste_target.lock() {
-      *paste_target = Some(target_value.clone());
-    }
+  if let Ok(mut paste_target) = runtime.paste_target.lock() {
+    // Failed capture must not reuse an unrelated target from an earlier opening.
+    *paste_target = target.clone();
   }
   let Some(window) = app.get_webview_window("main") else {
     return Ok(());
@@ -1814,6 +1896,16 @@ fn hide_panel_impl(app: &AppHandle) -> tauri::Result<()> {
     window.hide()?;
   }
   Ok(())
+}
+
+/// Waits for the UI-thread hide operation to complete before restoring native focus.
+fn wait_until_panel_hidden(app: &AppHandle) -> anyhow::Result<()> {
+  let Some(window) = app.get_webview_window("main") else { return Ok(()); };
+  for _ in 0..32 {
+    if !window.is_visible()? { return Ok(()); }
+    thread::sleep(Duration::from_millis(8));
+  }
+  anyhow::bail!("panel-hide-timeout")
 }
 
 fn broadcast_state(app: &AppHandle, runtime: &AppRuntime) {
@@ -1999,6 +2091,9 @@ fn capture_paste_target() -> anyhow::Result<String> {
 
     let mut process_id = 0;
     let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, &mut process_id) };
+    if process_id == std::process::id() {
+      anyhow::bail!("不能将 LightClip 自身作为粘贴目标");
+    }
     let mut info = GuiThreadInfo {
       size: std::mem::size_of::<GuiThreadInfo>() as u32,
       flags: 0,
@@ -2108,7 +2203,9 @@ fn invalid_caret_rect() -> NativeRect {
   }
 }
 
-fn paste_to_target(target: &str) -> anyhow::Result<()> {
+/// Restores the original foreground window without joining another process's input queue.
+/// A successful return means input submission, not confirmation that the editor accepted it.
+fn paste_to_target(target: &str, clipboard_sequence: u32) -> anyhow::Result<()> {
   #[cfg(windows)]
   {
     let (window_value, focused_value, _) = parse_paste_target(target)?;
@@ -2118,66 +2215,66 @@ fn paste_to_target(target: &str) -> anyhow::Result<()> {
       anyhow::bail!("粘贴目标窗口已失效");
     }
 
-    // Let WebView2 finish hiding before changing the foreground window. This
-    // prevents its completed click event from reclaiming focus after paste.
-    thread::sleep(Duration::from_millis(24));
-
-    let current_thread = unsafe { GetCurrentThreadId() };
-    let focus_target = if !focused_window.is_null() && unsafe { IsWindow(focused_window) } != 0 {
-      focused_window
-    } else {
-      window
-    };
-    let target_thread = unsafe { GetWindowThreadProcessId(focus_target, std::ptr::null_mut()) };
-    let foreground_window = unsafe { GetForegroundWindow() };
-    let foreground_thread = unsafe { GetWindowThreadProcessId(foreground_window, std::ptr::null_mut()) };
-    let attached_target = target_thread != 0
-      && target_thread != current_thread
-      && unsafe { AttachThreadInput(current_thread, target_thread, 1) } != 0;
-    let attached_foreground = foreground_thread != 0
-      && foreground_thread != current_thread
-      && foreground_thread != target_thread
-      && unsafe { AttachThreadInput(current_thread, foreground_thread, 1) } != 0;
-
-    let paste_result = (|| {
-      // Restoring only minimized windows avoids resizing normal or maximized targets.
-      if unsafe { IsIconic(window) } != 0 {
-        unsafe { ShowWindowAsync(window, SW_RESTORE) };
-        thread::sleep(Duration::from_millis(40));
-      }
-
-      for _ in 0..5 {
-        if unsafe { SetForegroundWindow(window) } == 0 {
-          unsafe {
-            BringWindowToTop(window);
-            SetForegroundWindow(window);
-          }
-        }
-        unsafe { SetFocus(focus_target) };
-        thread::sleep(Duration::from_millis(16));
-        if unsafe { GetForegroundWindow() } == window {
-          // Modern Chromium, WinUI and custom controls can acknowledge WM_PASTE without inserting text.
-          // SendInput mirrors normal keyboard paste and works consistently once the original focus is restored.
-          send_ctrl_v()?;
-          return Ok(());
-        }
-      }
-
-      anyhow::bail!("Windows 未允许恢复粘贴目标窗口焦点")
-    })();
-
-    // Always split the input queues again, including activation failures.
-    if attached_foreground {
-      unsafe { AttachThreadInput(current_thread, foreground_thread, 0) };
+    if !focused_window.is_null()
+      && (unsafe { IsWindow(focused_window) } == 0 || unsafe { GetAncestor(focused_window, 2) } != window) {
+      anyhow::bail!("target-control-invalid");
     }
-    if attached_target {
-      unsafe { AttachThreadInput(current_thread, target_thread, 0) };
-    }
-    return paste_result;
+    return paste_delivery::deliver(&WindowsPasteDesktop { window, focused_window, clipboard_sequence })
+      .map_err(anyhow::Error::msg);
   }
 
   #[cfg(not(windows))]
   anyhow::bail!("仅 Windows 支持自动粘贴")
+}
+
+/// Per-attempt native handles, used only on the copy worker and never persisted.
+#[cfg(windows)]
+struct WindowsPasteDesktop {
+  window: WindowHandle,
+  focused_window: WindowHandle,
+  clipboard_sequence: u32,
+}
+
+#[cfg(windows)]
+impl paste_delivery::PasteDesktop for WindowsPasteDesktop {
+  fn selection_released(&self) -> bool {
+    // Include mouse/Enter selection and both Windows keys, not just Alt+V.
+    [0x01, 0x02, 0x0D, 0x10, 0x11, 0x12, 0x56, 0x5B, 0x5C]
+      .iter().all(|key| unsafe { GetAsyncKeyState(*key) } >= 0)
+  }
+
+  fn clipboard_unchanged(&self) -> bool {
+    unsafe { GetClipboardSequenceNumber() == self.clipboard_sequence }
+  }
+
+  fn activate_target(&self) -> Result<(), String> {
+    if unsafe { IsWindow(self.window) } == 0 { return Err("target-window-invalid".into()); }
+    // Preserve normal/maximized bounds. Foreground activation lets the target
+    // restore its own control focus; cross-process SetFocus can hang its caller.
+    if unsafe { IsIconic(self.window) } != 0 { unsafe { ShowWindowAsync(self.window, SW_RESTORE) }; }
+    if unsafe { GetForegroundWindow() } != self.window { unsafe { SetForegroundWindow(self.window) }; }
+    Ok(())
+  }
+
+  fn target_focused(&self) -> bool {
+    if unsafe { GetForegroundWindow() } != self.window { return false; }
+    let thread = unsafe { GetWindowThreadProcessId(self.window, std::ptr::null_mut()) };
+    let mut info: GuiThreadInfo = unsafe { std::mem::zeroed() };
+    info.size = std::mem::size_of::<GuiThreadInfo>() as u32;
+    thread != 0 && unsafe { GetGUIThreadInfo(thread, &mut info) } != 0
+      && !info.focused_window.is_null()
+      && (self.focused_window.is_null() || info.focused_window == self.focused_window)
+  }
+
+  fn send_paste(&self) -> Result<(), String> {
+    // Check once more at the actual submission boundary, without retrying input.
+    if !self.clipboard_unchanged() || !self.target_focused() || !self.selection_released() {
+      return Err("paste-precondition-changed".into());
+    }
+    send_ctrl_v().map_err(|error| error.to_string())
+  }
+
+  fn pause(&self) { thread::sleep(Duration::from_millis(8)); }
 }
 
 fn parse_paste_target(target: &str) -> anyhow::Result<(isize, isize, NativeRect)> {
@@ -2227,6 +2324,12 @@ fn send_ctrl_v() -> anyhow::Result<()> {
   ];
   let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<NativeInput>() as i32) };
   if sent != inputs.len() as u32 {
+    if sent > 0 {
+      // Never retry V-down after partial delivery. Release only our synthetic
+      // keys so a rejected transaction does not leave Ctrl logically pressed.
+      let releases = [keyboard_input(VK_V, KEYEVENTF_KEYUP), keyboard_input(VK_CONTROL, KEYEVENTF_KEYUP)];
+      unsafe { SendInput(releases.len() as u32, releases.as_ptr(), std::mem::size_of::<NativeInput>() as i32) };
+    }
     anyhow::bail!("Windows 仅发送了 {sent}/{} 个粘贴按键事件", inputs.len());
   }
   Ok(())
@@ -2796,6 +2899,70 @@ mod tests {
     assert!(serde_json::to_vec(&store.state).unwrap().len() as u64 <= before / 2);
     assert!(store.get_item(pinned.id()).is_some());
     assert!(store.state.items.len() < 21);
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn repeated_copy_usage_does_not_rewrite_history_and_survives_reload() {
+    let root = std::env::temp_dir().join(format!("lightclip-usage-test-{}", Uuid::new_v4()));
+    let mut store = ClipboardStore::new(root.clone()).unwrap();
+    let item = store.record_text("private fixture content must not appear in usage").unwrap().unwrap();
+    // Large embedded payload and 936 entries exercise usage cost independently of image size.
+    for index in 0..935 {
+      store.state.items.push(ClipboardItem::Image {
+        id: format!("image-{index}"), pinned: false, copy_count: 0,
+        created_at: now_ms(), updated_at: now_ms(), width: 1, height: 1, byte_size: 8192,
+        data_url: format!("data:image/png;base64,{}", "a".repeat(8192)),
+      });
+    }
+    store.state.settings.max_history_items = 2000;
+    store.save().unwrap();
+    let original = fs::read(&store.file_path).unwrap();
+    let started = Instant::now();
+    for _ in 0..10 { store.touch_copied_item(item.id()).unwrap(); }
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(fs::read(&store.file_path).unwrap(), original);
+    let usage = fs::read_to_string(root.join(USAGE_FILE_NAME)).unwrap();
+    assert!(!usage.contains("private fixture"));
+    assert!(!usage.contains("data:image"));
+    assert!(usage.len() < 200_000);
+    let expected_count = item.usage().copy_count + 10;
+    let mut reloaded = ClipboardStore::new(root.clone()).unwrap();
+    reloaded.load().unwrap();
+    assert_eq!(reloaded.get_item(item.id()).unwrap().usage().copy_count, expected_count);
+    assert!(!root.join(USAGE_FILE_NAME).exists());
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn usage_failure_rolls_back_counters_without_losing_record() {
+    let root = std::env::temp_dir().join(format!("lightclip-usage-failure-{}", Uuid::new_v4()));
+    let mut store = ClipboardStore::new(root.clone()).unwrap();
+    let item = store.record_text("usage rollback").unwrap().unwrap();
+    fs::create_dir(root.join(USAGE_FILE_NAME)).unwrap();
+    assert!(store.touch_copied_item(item.id()).is_err());
+    assert_eq!(serde_json::to_value(store.get_item(item.id())).unwrap(), serde_json::to_value(Some(item)).unwrap());
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn stale_or_corrupt_usage_does_not_override_current_history() {
+    let root = std::env::temp_dir().join(format!("lightclip-usage-stale-{}", Uuid::new_v4()));
+    let mut store = ClipboardStore::new(root.clone()).unwrap();
+    let item = store.record_text("usage identity").unwrap().unwrap();
+    let stale = ItemUsage { created_at: item.usage().created_at + 1, updated_at: now_ms() + 1000, copy_count: 999 };
+    let usage = HashMap::from([(item.id().to_string(), stale)]);
+    fs::write(root.join(USAGE_FILE_NAME), serde_json::to_vec(&usage).unwrap()).unwrap();
+    store.load_usage();
+    assert_eq!(store.get_item(item.id()).unwrap().usage().copy_count, item.usage().copy_count);
+    fs::write(root.join(USAGE_FILE_NAME), b"broken").unwrap();
+    store.load_usage();
+    assert!(store.get_item(item.id()).is_some());
+    store.touch_copied_item(item.id()).unwrap();
+    store.delete_item(item.id()).unwrap();
+    let mut reloaded = ClipboardStore::new(root.clone()).unwrap();
+    reloaded.load().unwrap();
+    assert!(reloaded.get_item(item.id()).is_none());
     fs::remove_dir_all(root).unwrap();
   }
 

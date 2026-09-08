@@ -5,6 +5,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# This fixture owns a temporary runner store and must never touch a user's installation.
+if ($env:GITHUB_ACTIONS -ne 'true') {
+  throw 'This destructive fixture is restricted to disposable GitHub Actions runners.'
+}
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -100,6 +105,12 @@ public static class LightClipShortcutProbe
         keybd_event(enter, 0, keyUp, UIntPtr.Zero);
     }
 
+    // Exercise a modifier held beyond history selection without typing into the target.
+    public static void SetShift(bool down)
+    {
+        keybd_event(0x10, 0, down ? 0u : 0x0002u, UIntPtr.Zero);
+    }
+
     public static bool IsAltVRegistered()
     {
         const int probeId = 0x4C43;
@@ -120,6 +131,11 @@ public static class LightClipShortcutProbe
 $resolvedExecutable = Resolve-Path -LiteralPath $ExecutablePath
 $storeDirectory = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'LightClip'
 $storeBackupDirectory = "$storeDirectory.packaged-test-$([Guid]::NewGuid().ToString('N'))"
+$expectedStoreRoot = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'LightClip'))
+if ([IO.Path]::GetFullPath($storeDirectory) -ne $expectedStoreRoot -or
+    -not [IO.Path]::GetFullPath($storeBackupDirectory).StartsWith("$expectedStoreRoot.packaged-test-", [StringComparison]::OrdinalIgnoreCase)) {
+  throw 'The fixture paths are outside the expected runner store.'
+}
 $expectedText = "LightClip packaged paste test $([Guid]::NewGuid().ToString('N'))"
 $form = $null
 $textBox = $null
@@ -250,6 +266,58 @@ try {
     throw "Paste-after-copy did not fill the focused textbox. Actual text: '$($textBox.Text)'"
   }
   Write-Host 'Packaged paste-after-copy restored the focused textbox and inserted the selected item.'
+
+  $originalTargetBounds = [LightClipShortcutProbe]::GetWindowBounds($form.Handle) -join ','
+  $secondTextBox = New-Object System.Windows.Forms.TextBox
+  $secondTextBox.Dock = [System.Windows.Forms.DockStyle]::Bottom
+  $form.Controls.Add($secondTextBox)
+  $latencies = @()
+  for ($attempt = 0; $attempt -lt 12; $attempt++) {
+    $targetTextBox = if ($attempt % 2 -eq 0) { $textBox } else { $secondTextBox }
+    $textBox.Clear()
+    $secondTextBox.Clear()
+    $form.Activate()
+    [void]$targetTextBox.Focus()
+    [System.Windows.Forms.Application]::DoEvents()
+    [LightClipShortcutProbe]::SendAltV()
+    $deadline = [DateTime]::UtcNow.AddSeconds(2)
+    while (-not [LightClipShortcutProbe]::IsWindowVisible($window) -and [DateTime]::UtcNow -lt $deadline) {
+      [System.Windows.Forms.Application]::DoEvents()
+      Start-Sleep -Milliseconds 10
+    }
+    if (-not [LightClipShortcutProbe]::IsWindowVisible($window)) { throw "Repeated opening failed at $attempt." }
+    Start-Sleep -Milliseconds 100
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $holdShift = $attempt % 3 -eq 0
+    try {
+      if ($holdShift) { [LightClipShortcutProbe]::SetShift($true) }
+      [LightClipShortcutProbe]::SendEnter()
+      if ($holdShift) {
+        $releaseAt = [DateTime]::UtcNow.AddMilliseconds(150)
+        while ([DateTime]::UtcNow -lt $releaseAt) {
+          [System.Windows.Forms.Application]::DoEvents()
+          Start-Sleep -Milliseconds 10
+        }
+        if ($targetTextBox.Text.Length -ne 0) { throw 'Paste was submitted while Shift was still held.' }
+      }
+    } finally {
+      [LightClipShortcutProbe]::SetShift($false)
+    }
+    $deadline = [DateTime]::UtcNow.AddMilliseconds(1500)
+    while ($targetTextBox.Text -ne $expectedText -and [DateTime]::UtcNow -lt $deadline) {
+      [System.Windows.Forms.Application]::DoEvents()
+      Start-Sleep -Milliseconds 10
+    }
+    $timer.Stop()
+    if ($targetTextBox.Text -ne $expectedText) { throw "Repeated paste failed at $attempt; received $($targetTextBox.Text.Length) characters." }
+    $otherTextBox = if ($attempt % 2 -eq 0) { $secondTextBox } else { $textBox }
+    if ($otherTextBox.Text.Length -ne 0) { throw 'Paste reached the wrong input control.' }
+    if (([LightClipShortcutProbe]::GetWindowBounds($form.Handle) -join ',') -ne $originalTargetBounds) {
+      throw 'Automatic paste changed the target window bounds.'
+    }
+    $latencies += $timer.ElapsedMilliseconds
+  }
+  Write-Host "Repeated paste passed: 12/12; selection-to-insertion ms: $($latencies -join ', ')."
 }
 finally {
   if ($null -ne $form) {
