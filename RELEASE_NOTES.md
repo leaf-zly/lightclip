@@ -1,31 +1,31 @@
-# LightClip v2.3.3
+# LightClip v2.3.4
 
-This maintenance release adds a larger, interactive image preview. Existing history and settings remain compatible.
+This maintenance release improves automatic paste sequencing and removes full-history recompression from copy-count updates. Existing history and settings remain compatible.
 
-## Responsiveness
+## Automatic Paste
 
-- Moves pin/delete persistence off the Windows UI thread and avoids full-history broadcasts for these actions.
-- Avoids cloning the complete image history when deleting one record.
-- Removes expensive background blur from the history preview overlay.
+- Waits for selection keys to be released and the original input control to regain stable focus before submitting Ctrl+V.
+- Removes cross-process input-queue attachment and forced control focus, which could cause stalls or interfere with modifier state.
+- Rejects overlapping selections and stops pending paste when the target becomes invalid, focus is lost or the clipboard changes.
+- Waits for the panel to finish hiding and preserves normal/maximized target-window bounds.
+- Submits paste at most once; partial input delivery is not retried.
 
-## Interface
+## Performance And Storage
 
-- Removes horizontal scrolling from history and preview surfaces.
-- Truncates long record titles and file paths with ellipsis and full-text hover labels; text previews wrap long lines.
-- Adds delayed image hover previews constrained to the window. Previews dismiss on scrolling, pointer exit, Escape and window blur.
-- Adds pending-action feedback and duplicate-action protection to preview buttons.
-
-## Reliability
-
-- Restores pin state when saving fails.
-- Keeps the preview and record available after failed deletion, with retry feedback.
-- Keeps modal dismissal available while persistence is pending.
+- Saves copy counts and timestamps in `lightclip-usage.json` instead of recompressing all text and image history for every selection.
+- The sidecar contains record IDs and usage metadata only, not copied text, images or file paths. Startup replays newer usage and full store saves fold it back into the main history file.
+- Adds stage timing and failure diagnostics without logging clipboard contents.
+- When backing up a live storage directory, include the sidecar to preserve the latest usage counts. Older versions ignore it, so downgrading may lose recent counters but not clipboard content.
 
 ## Verification And Limitations
 
-The source passed 13 frontend tests, 21 Windows native tests and eight responsive light/dark browser cases using 936 synthetic records. Browser checks cover delayed/failed actions, long unbroken text, long file paths and image-hover placement. Release packaging reruns the source CI gate and packaged shortcut/caret-placement/textbox-paste smoke test before publication.
+The validated fix passed 15 frontend tests and 34 Windows native tests. Usage tests include 936 synthetic entries, unchanged compressed history after repeated selections, reload recovery and save-failure rollback.
 
-Browser tests use mocked native responses. Performance with the user's actual history and real previous-version upgrade installation have not been measured in this release. Diverse editors and multi-monitor/DPI combinations are not fully certified. Image thumbnail caching, full list virtualization, edit-before-copy, filtered export and Tauri data encryption remain open; see the [audit report](https://github.com/leaf-zly/lightclip/blob/v2.3.2/docs/AUDIT-2026-09-07.md).
+A GitHub-built Windows package passed 12 consecutive pastes between two input controls, including held-Shift attempts and unchanged window bounds. Ordinary selection-to-insertion latency was 53-69 ms in that runner test; held-Shift cases completed in 183-196 ms including a deliberate 150 ms hold. Tagged packaging repeats the CI gate, packaged paste smoke and visible-installer handoff probe before publication.
+
+These measurements are not a universal performance or compatibility guarantee. The user's real clipboard history, every editor, elevated applications and every multi-monitor/IME configuration have not been certified. Large-image decoding, file clipboard helpers and concurrent capture/import/maintenance writes can still add latency. Windows privilege boundaries remain unchanged. A submitted Ctrl+V is not proof that every editor accepted the content.
+
+See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.3.4/docs/PASTE-RELIABILITY.md) for the transaction and persistence contracts.
 
 ## Downloads
 
@@ -33,4 +33,4 @@ Browser tests use mocked native responses. Performance with the user's actual hi
 - The portable executable is available separately.
 - `latest.json` and `.sig` files are updater metadata, not installers. Updater signatures are not Windows Authenticode code signing; unsigned Windows binaries may still trigger antivirus or SmartScreen warnings.
 
-[Download LightClip v2.3.3](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.3)
+[Download LightClip v2.3.4](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.4)

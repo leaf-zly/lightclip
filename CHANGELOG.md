@@ -6,6 +6,30 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.3.4] - 2026-09-08
+
+### Fixed
+
+- Waits for selection keys to be released and the captured input control to regain stable focus before submitting Ctrl+V.
+- Removes cross-process input-queue attachment and forced control focus, avoiding a source of stalls and modifier-state interference.
+- Rejects overlapping copy transactions and cancels pending paste on invalid targets, clipboard replacement or focus loss without retrying V-down.
+- Waits for panel hiding to complete and preserves normal/maximized target-window bounds.
+
+### Improved
+
+- Persists copy counts and timestamps in a small, content-free usage sidecar instead of recompressing the complete image history on each selection.
+- Replays usage metadata on startup, folds it into full store saves and rolls back counters when usage writes fail.
+- Adds content-free stage timing and failure diagnostics. See [Automatic Paste Reliability](docs/PASTE-RELIABILITY.md) for persistence and compatibility details.
+
+### Verification
+
+- The validated fix passed 15 frontend tests and 34 Windows native tests, including 936-entry usage persistence fixtures.
+- A GitHub-built Windows package passed 12 consecutive pastes between two input controls, including held-Shift cases and unchanged target bounds.
+- Ordinary selection-to-insertion latency was 53-69 ms in that runner test. This is not a guarantee for every editor or the user's real history.
+- Tagged packaging repeats CI, textbox paste and visible-installer handoff checks before publication. Administrator-window restrictions still apply.
+
+## [2.3.3] - 2026-09-07
+
 ### Fixed
 
 - Replaces unconditional Windows updater exit with signature-verified download and checked installer-window handoff.
@@ -19,8 +43,6 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 - Adds failed-launch, retry-gate, installer-file and renderer-handoff regression tests.
 - Packaging probes the real NSIS installer window on an isolated GitHub Windows runner before release publication.
 - Installer handoff verification does not certify a complete old-version-to-new-version replacement or antivirus compatibility.
-
-## [2.3.3] - 2026-09-07
 
 ### Added
 
