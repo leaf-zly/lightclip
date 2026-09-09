@@ -383,6 +383,8 @@ struct ItemUsage {
   created_at: i64,
   updated_at: i64,
   copy_count: u32,
+  #[serde(default)]
+  pinned: Option<bool>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1137,14 +1139,19 @@ impl ClipboardStore {
     let before = self.state.items[index].usage();
     self.state.items[index].increment_copy_count();
     self.state.items[index].set_updated_at(now_ms().max(before.updated_at.saturating_add(1)));
-    let usage: HashMap<_, _> = self.state.items.iter().map(|item| (item.id(), item.usage())).collect();
-    let result = serde_json::to_vec(&usage).map_err(anyhow::Error::from)
-      .and_then(|bytes| write_atomic(&self.storage_directory.join(USAGE_FILE_NAME), &bytes));
+    let result = self.persist_usage_metadata();
     if let Err(error) = result {
       self.state.items[index].set_usage(&before);
       return Err(error);
     }
     Ok(Some(self.state.items[index].clone()))
+  }
+
+  /// Writes record metadata without serializing clipboard payloads.
+  fn persist_usage_metadata(&self) -> anyhow::Result<()> {
+    let usage: HashMap<_, _> = self.state.items.iter().map(|item| (item.id(), item.usage())).collect();
+    let bytes = serde_json::to_vec(&usage)?;
+    write_atomic(&self.storage_directory.join(USAGE_FILE_NAME), &bytes)
   }
 
   /// Replays newer usage only for records still present in the authoritative store.
@@ -1184,7 +1191,7 @@ impl ClipboardStore {
     let before = self.state.items[index].clone();
     self.state.items[index].toggle_pin();
     self.state.items[index].set_updated_at(now_ms());
-    if let Err(error) = self.save() {
+    if let Err(error) = self.persist_usage_metadata() {
       self.state.items[index] = before;
       return Err(error);
     }
@@ -1602,6 +1609,7 @@ impl ClipboardItem {
       | Self::Image { created_at, updated_at, copy_count, .. }
       | Self::File { created_at, updated_at, copy_count, .. } => ItemUsage {
         created_at: *created_at, updated_at: *updated_at, copy_count: *copy_count,
+        pinned: Some(self.pinned()),
       },
     }
   }
@@ -1609,11 +1617,12 @@ impl ClipboardItem {
   /// Restores mutable counters only; record identity and clipboard contents are unchanged.
   fn set_usage(&mut self, usage: &ItemUsage) {
     match self {
-      Self::Text { updated_at, copy_count, .. }
-      | Self::Image { updated_at, copy_count, .. }
-      | Self::File { updated_at, copy_count, .. } => {
+      Self::Text { pinned, updated_at, copy_count, .. }
+      | Self::Image { pinned, updated_at, copy_count, .. }
+      | Self::File { pinned, updated_at, copy_count, .. } => {
         *updated_at = usage.updated_at;
         *copy_count = usage.copy_count;
+        if let Some(value) = usage.pinned { *pinned = value; }
       }
     }
   }
@@ -2946,11 +2955,29 @@ mod tests {
   }
 
   #[test]
+  fn pin_toggle_does_not_rewrite_history_and_survives_reload() {
+    let root = std::env::temp_dir().join(format!("lightclip-pin-usage-test-{}", Uuid::new_v4()));
+    let mut store = ClipboardStore::new(root.clone()).unwrap();
+    let item = store.record_text("pin persistence").unwrap().unwrap();
+    store.save().unwrap();
+    let original = fs::read(&store.file_path).unwrap();
+    let started = Instant::now();
+    let pinned = store.toggle_pin(item.id()).unwrap().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(pinned.pinned());
+    assert_eq!(fs::read(&store.file_path).unwrap(), original);
+    let mut reloaded = ClipboardStore::new(root.clone()).unwrap();
+    reloaded.load().unwrap();
+    assert!(reloaded.get_item(item.id()).unwrap().pinned());
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
   fn stale_or_corrupt_usage_does_not_override_current_history() {
     let root = std::env::temp_dir().join(format!("lightclip-usage-stale-{}", Uuid::new_v4()));
     let mut store = ClipboardStore::new(root.clone()).unwrap();
     let item = store.record_text("usage identity").unwrap().unwrap();
-    let stale = ItemUsage { created_at: item.usage().created_at + 1, updated_at: now_ms() + 1000, copy_count: 999 };
+    let stale = ItemUsage { created_at: item.usage().created_at + 1, updated_at: now_ms() + 1000, copy_count: 999, pinned: Some(true) };
     let usage = HashMap::from([(item.id().to_string(), stale)]);
     fs::write(root.join(USAGE_FILE_NAME), serde_json::to_vec(&usage).unwrap()).unwrap();
     store.load_usage();

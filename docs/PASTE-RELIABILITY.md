@@ -22,8 +22,8 @@ decoding or file clipboard helpers can still take longer.
 ## Usage Persistence
 
 `lightclip-usage.json` in the selected storage directory stores record IDs,
-creation/update times and copy counts only. It contains no copied text, image
-data or file paths. Selecting history atomically rewrites this small sidecar
+creation/update times, copy counts and pin state only. It contains no copied
+text, image data or file paths. Selecting history or changing pin state atomically rewrites this small sidecar
 instead of recompressing the entire clipboard store.
 
 Startup replays newer metadata for matching record identities. Any full history

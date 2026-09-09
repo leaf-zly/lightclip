@@ -6,6 +6,17 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.3.5] - 2026-09-09
+
+### Fixed
+
+- Makes pin and unpin actions lightweight by persisting pin state in the metadata sidecar instead of recompressing the complete history.
+- Applies the confirmed pin state to the visible history list immediately and verifies that it survives restart.
+
+### Verification
+
+- Adds a native regression test proving pin changes do not rewrite the compressed history and persist across reload.
+
 ## [2.3.4] - 2026-09-08
 
 ### Fixed

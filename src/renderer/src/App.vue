@@ -389,7 +389,16 @@ async function togglePin(item: ClipboardItem): Promise<void> {
   itemMutation.value = { id: item.id, action: 'pin' }
   try {
     const result = await lightClip.togglePin(item.id)
-    if (result.ok && result.data && previewItem.value?.id === item.id) previewItem.value = result.data
+    if (result.ok && result.data) {
+      // Apply the acknowledged native state immediately; pin persistence is now
+      // metadata-only, but the list must not wait for a full history refresh.
+      state.value = {
+        ...state.value,
+        items: state.value.items.map((entry) => entry.id === item.id ? result.data! : entry),
+        storageBytes: state.value.storageBytes,
+      }
+      if (previewItem.value?.id === item.id) previewItem.value = result.data
+    }
     showToast(result.ok ? (result.data?.pinned ? '已固定' : '已取消固定') : result.error ?? '操作失败')
   } catch {
     showToast('操作失败，请重试')
