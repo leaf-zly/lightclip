@@ -1,6 +1,6 @@
 [package]
 name = "lightclip"
-version = "2.3.4"
+version = "2.3.5"
 description = "A lightweight Windows clipboard history app."
 authors = ["qiang.tan"]
 license = "MIT"

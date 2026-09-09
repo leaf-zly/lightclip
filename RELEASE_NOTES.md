@@ -1,6 +1,11 @@
-# LightClip v2.3.4
+# LightClip v2.3.5
 
-This maintenance release improves automatic paste sequencing and removes full-history recompression from copy-count updates. Existing history and settings remain compatible.
+This maintenance release makes pin actions immediate and durable while retaining the automatic paste and storage improvements from v2.3.4. Existing history and settings remain compatible.
+
+## Pin Responsiveness
+
+- Pin and unpin now write only lightweight metadata instead of recompressing the full history.
+- The history list updates immediately after native confirmation, with pin state restored after restart.
 
 ## Automatic Paste
 
@@ -12,8 +17,8 @@ This maintenance release improves automatic paste sequencing and removes full-hi
 
 ## Performance And Storage
 
-- Saves copy counts and timestamps in `lightclip-usage.json` instead of recompressing all text and image history for every selection.
-- The sidecar contains record IDs and usage metadata only, not copied text, images or file paths. Startup replays newer usage and full store saves fold it back into the main history file.
+- Saves copy counts, timestamps and pin state in `lightclip-usage.json` instead of recompressing all text and image history for every selection or pin change.
+- The sidecar contains record IDs and small metadata only, not copied text, images or file paths. Startup replays newer metadata and full store saves fold it back into the main history file.
 - Adds stage timing and failure diagnostics without logging clipboard contents.
 - When backing up a live storage directory, include the sidecar to preserve the latest usage counts. Older versions ignore it, so downgrading may lose recent counters but not clipboard content.
 
@@ -25,7 +30,7 @@ A GitHub-built Windows package passed 12 consecutive pastes between two input co
 
 These measurements are not a universal performance or compatibility guarantee. The user's real clipboard history, every editor, elevated applications and every multi-monitor/IME configuration have not been certified. Large-image decoding, file clipboard helpers and concurrent capture/import/maintenance writes can still add latency. Windows privilege boundaries remain unchanged. A submitted Ctrl+V is not proof that every editor accepted the content.
 
-See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.3.4/docs/PASTE-RELIABILITY.md) for the transaction and persistence contracts.
+See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.3.5/docs/PASTE-RELIABILITY.md) for the transaction and persistence contracts.
 
 ## Downloads
 
@@ -33,4 +38,4 @@ See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.
 - The portable executable is available separately.
 - `latest.json` and `.sig` files are updater metadata, not installers. Updater signatures are not Windows Authenticode code signing; unsigned Windows binaries may still trigger antivirus or SmartScreen warnings.
 
-[Download LightClip v2.3.4](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.4)
+[Download LightClip v2.3.5](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.5)
