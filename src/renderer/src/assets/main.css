@@ -381,6 +381,13 @@ h1 {
   color: var(--subtle);
 }
 
+/* The search row has its own clear button; hide Chromium's native duplicate. */
+.search-row input[type='search']::-webkit-search-cancel-button,
+.search-row input[type='search']::-webkit-search-decoration {
+  display: none;
+  -webkit-appearance: none;
+}
+
 .settings-pane {
   display: grid;
   min-height: 0;
@@ -728,6 +735,7 @@ h1 {
   text-align: left;
   background: transparent;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .item-content {
@@ -779,14 +787,13 @@ h1 {
 }
 
 .item-preview {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
-  overflow-wrap: anywhere;
   color: var(--text);
   font-size: 14px;
   line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-item-image .item-preview {

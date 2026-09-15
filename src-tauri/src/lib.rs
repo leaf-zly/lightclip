@@ -168,6 +168,7 @@ struct AppRuntime {
   copy_transaction: Arc<Mutex<()>>,
   paste_target: Arc<Mutex<Option<String>>>,
   last_clipboard_signature: Arc<Mutex<String>>,
+  panel_sizes: Arc<Mutex<HashMap<String, PhysicalSize<u32>>>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -405,6 +406,7 @@ pub fn run() {
         copy_transaction: Arc::new(Mutex::new(())),
         paste_target: Arc::new(Mutex::new(None)),
         last_clipboard_signature: Arc::new(Mutex::new(String::new())),
+        panel_sizes: Arc::new(Mutex::new(HashMap::new())),
       };
       app.manage(runtime.clone());
       let global_shortcut = runtime
@@ -436,6 +438,19 @@ pub fn run() {
       Ok(())
     })
     .on_window_event(|window, event| {
+      if let WindowEvent::Resized(size) = event {
+        if size.width > 0 && size.height > 0 {
+          let runtime = window.app_handle().state::<AppRuntime>();
+          let mode = runtime
+            .store
+            .lock()
+            .map(|store| store.state.settings.interface_mode.clone())
+            .unwrap_or_else(|_| "standard".to_string());
+          if let Ok(mut sizes) = runtime.panel_sizes.lock() {
+            sizes.insert(mode, *size);
+          }
+        }
+      }
       if let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
         let _ = window.hide();
@@ -784,7 +799,12 @@ fn apply_settings_update(settings: AppSettingsPatch, app: AppHandle, runtime: &A
       if let Some(window) = app.get_webview_window("main") {
         let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
         // Resize the live WebView before compressing a large history store so mode changes feel immediate.
-        let _ = configure_panel_window(&window, target.as_deref(), interface_mode);
+        let previous_size = window.inner_size().ok();
+        if let Some(size) = previous_size {
+          remember_panel_size(runtime, &current_interface_mode, size);
+        }
+        let preferred_size = runtime.panel_sizes.lock().ok().and_then(|sizes| sizes.get(interface_mode).copied());
+        let _ = configure_panel_window(&window, target.as_deref(), interface_mode, preferred_size);
       }
     }
   }
@@ -1753,7 +1773,8 @@ fn show_panel(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()> {
     .lock()
     .map(|store| store.state.settings.interface_mode.clone())
     .unwrap_or_else(|_| "standard".to_string());
-  configure_panel_window(&window, target.as_deref(), &interface_mode)?;
+  let preferred_size = runtime.panel_sizes.lock().ok().and_then(|sizes| sizes.get(&interface_mode).copied());
+  configure_panel_window(&window, target.as_deref(), &interface_mode, preferred_size)?;
   window.show()?;
   window.set_focus()?;
   Ok(())
@@ -1854,7 +1875,21 @@ fn is_caret_rect_usable(rect: NativeRect) -> bool {
 }
 
 /// Applies the persisted panel layout on the monitor nearest the captured foreground window.
-fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interface_mode: &str) -> anyhow::Result<()> {
+/// Remembers a user-resized panel independently for standard and compact layouts.
+fn remember_panel_size(runtime: &AppRuntime, mode: &str, size: PhysicalSize<u32>) {
+  if size.width == 0 || size.height == 0 { return; }
+  if let Ok(mut sizes) = runtime.panel_sizes.lock() {
+    sizes.insert(mode.to_string(), size);
+  }
+}
+
+/// Applies panel geometry while preserving a user-resized mode-specific size.
+fn configure_panel_window(
+  window: &WebviewWindow,
+  target: Option<&str>,
+  interface_mode: &str,
+  preferred_size: Option<PhysicalSize<u32>>,
+) -> anyhow::Result<()> {
   #[cfg(windows)]
   {
     let parsed_target = target.and_then(|value| parse_paste_target(value).ok());
@@ -1894,8 +1929,15 @@ fn configure_panel_window(window: &WebviewWindow, target: Option<&str>, interfac
     );
     let _ = window.unmaximize();
     window.set_min_size(Some(minimum))?;
-    window.set_size(PhysicalSize::new(bounds.width, bounds.height))?;
-    window.set_position(PhysicalPosition::new(bounds.x, bounds.y))?;
+    let (width, height) = preferred_size
+      .map(|size| (size.width.min((monitor_info.work.right - monitor_info.work.left).max(1) as u32), size.height.min((monitor_info.work.bottom - monitor_info.work.top).max(1) as u32)))
+      .unwrap_or((bounds.width, bounds.height));
+    let work_width = (monitor_info.work.right - monitor_info.work.left).max(1) as u32;
+    let work_height = (monitor_info.work.bottom - monitor_info.work.top).max(1) as u32;
+    let x = bounds.x.max(monitor_info.work.left).min(monitor_info.work.right - width as i32);
+    let y = bounds.y.max(monitor_info.work.top).min(monitor_info.work.bottom - height as i32);
+    window.set_size(PhysicalSize::new(width.max(minimum.width.min(work_width)), height.max(minimum.height.min(work_height))))?;
+    window.set_position(PhysicalPosition::new(x, y))?;
   }
   Ok(())
 }

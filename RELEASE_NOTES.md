@@ -1,11 +1,17 @@
-# LightClip v2.3.5
+# LightClip v2.3.6
 
-This maintenance release makes pin actions immediate and durable while retaining the automatic paste and storage improvements from v2.3.4. Existing history and settings remain compatible.
+This maintenance release fixes narrow-window truncation and preserves user-resized panel dimensions when switching layouts. It also makes pin actions immediate and durable. Existing history and settings remain compatible.
 
 ## Pin Responsiveness
 
 - Pin and unpin now write only lightweight metadata instead of recompressing the full history.
 - The history list updates immediately after native confirmation, with pin state restored after restart.
+
+## Layout And Overflow
+
+- Hides Chromium's native search clear control so the search field shows one consistent clear button.
+- Uses reliable single-line ellipsis for history titles instead of clipping long content at narrow widths.
+- Remembers separate manual window sizes for standard and compact modes, constraining restored sizes to the active monitor work area.
 
 ## Automatic Paste
 
@@ -30,7 +36,7 @@ A GitHub-built Windows package passed 12 consecutive pastes between two input co
 
 These measurements are not a universal performance or compatibility guarantee. The user's real clipboard history, every editor, elevated applications and every multi-monitor/IME configuration have not been certified. Large-image decoding, file clipboard helpers and concurrent capture/import/maintenance writes can still add latency. Windows privilege boundaries remain unchanged. A submitted Ctrl+V is not proof that every editor accepted the content.
 
-See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.3.5/docs/PASTE-RELIABILITY.md) for the transaction and persistence contracts.
+See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.3.6/docs/PASTE-RELIABILITY.md) for the transaction and persistence contracts.
 
 ## Downloads
 
@@ -38,4 +44,4 @@ See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.
 - The portable executable is available separately.
 - `latest.json` and `.sig` files are updater metadata, not installers. Updater signatures are not Windows Authenticode code signing; unsigned Windows binaries may still trigger antivirus or SmartScreen warnings.
 
-[Download LightClip v2.3.5](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.5)
+[Download LightClip v2.3.6](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.6)

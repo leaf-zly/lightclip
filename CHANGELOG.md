@@ -6,6 +6,17 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.3.6] - 2026-09-15
+
+### Fixed
+
+- Hides the duplicate Chromium search clear control and uses a reliable single-line ellipsis for narrow history cards.
+- Remembers separate manual panel sizes for standard and compact modes, restoring them within the active monitor bounds during layout switching.
+
+### Improved
+
+- Adds regression coverage for pin metadata persistence and keeps confirmed pin changes synchronized in the visible list.
+
 ## [2.3.5] - 2026-09-09
 
 ### Fixed
