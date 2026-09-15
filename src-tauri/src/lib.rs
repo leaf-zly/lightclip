@@ -448,7 +448,7 @@ pub fn run() {
             .unwrap_or_else(|_| "standard".to_string());
           if let Ok(mut sizes) = runtime.panel_sizes.lock() {
             sizes.insert(mode, *size);
-          }
+          };
         }
       }
       if let WindowEvent::CloseRequested { api, .. } = event {
