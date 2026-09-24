@@ -88,6 +88,20 @@ function installFixture({mode, theme, accent}) {
         await page.locator('.history-item').first().waitFor();
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth > innerWidth),false);
         assert.equal(await page.locator('.image-preview').first().evaluate(img=>img.complete && img.naturalWidth>0),true);
+        const narrowPreview = page.locator('.history-item-text .item-preview').first();
+        const narrowPreviewLayout = await narrowPreview.evaluate(el => {
+          const style = getComputedStyle(el);
+          return {
+            overflow: style.overflow,
+            textOverflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+            clipped: el.scrollWidth > el.clientWidth,
+          };
+        });
+        assert.equal(narrowPreviewLayout.overflow, 'hidden');
+        assert.equal(narrowPreviewLayout.textOverflow, 'ellipsis');
+        assert.equal(narrowPreviewLayout.whiteSpace, 'nowrap');
+        assert.equal(narrowPreviewLayout.clipped, true);
         await page.locator('.image-preview-frame').first().hover();
         await page.getByRole('tooltip',{name:'图片预览'}).waitFor();
         assert.equal(await page.locator('.image-hover-preview').evaluate(el=>{

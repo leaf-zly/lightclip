@@ -743,7 +743,10 @@ h1 {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .image-item-layout {
@@ -751,7 +754,10 @@ h1 {
   grid-template-columns: 32px minmax(148px, 220px) minmax(0, 1fr);
   gap: 12px;
   align-items: center;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .image-item-copy {
@@ -783,11 +789,17 @@ h1 {
 }
 
 .item-body {
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .item-preview {
   display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   color: var(--text);
   font-size: 14px;
@@ -798,7 +810,6 @@ h1 {
 
 .history-item-image .item-preview {
   font-weight: 650;
-  -webkit-line-clamp: 1;
 }
 
 .image-preview-frame {

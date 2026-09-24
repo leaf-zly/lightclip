@@ -169,6 +169,7 @@ struct AppRuntime {
   paste_target: Arc<Mutex<Option<String>>>,
   last_clipboard_signature: Arc<Mutex<String>>,
   panel_sizes: Arc<Mutex<HashMap<String, PhysicalSize<u32>>>>,
+  panel_resize_mode: Arc<Mutex<String>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -400,6 +401,7 @@ pub fn run() {
       let mut store = ClipboardStore::new(default_storage_directory())?;
       store.load()?;
       apply_launch_at_login(store.state.settings.launch_at_login);
+      let initial_interface_mode = store.state.settings.interface_mode.clone();
 
       let runtime = AppRuntime {
         store: Arc::new(Mutex::new(store)),
@@ -407,6 +409,7 @@ pub fn run() {
         paste_target: Arc::new(Mutex::new(None)),
         last_clipboard_signature: Arc::new(Mutex::new(String::new())),
         panel_sizes: Arc::new(Mutex::new(HashMap::new())),
+        panel_resize_mode: Arc::new(Mutex::new(initial_interface_mode)),
       };
       app.manage(runtime.clone());
       let global_shortcut = runtime
@@ -441,10 +444,13 @@ pub fn run() {
       if let WindowEvent::Resized(size) = event {
         if size.width > 0 && size.height > 0 {
           let runtime = window.app_handle().state::<AppRuntime>();
+          // The settings store may still contain the previous mode while a
+          // programmatic layout switch is being applied. Use the live mode
+          // marker so a resize cannot overwrite the other mode's preference.
           let mode = runtime
-            .store
+            .panel_resize_mode
             .lock()
-            .map(|store| store.state.settings.interface_mode.clone())
+            .map(|mode| mode.clone())
             .unwrap_or_else(|_| "standard".to_string());
           if let Ok(mut sizes) = runtime.panel_sizes.lock() {
             sizes.insert(mode, *size);
@@ -797,6 +803,7 @@ fn apply_settings_update(settings: AppSettingsPatch, app: AppHandle, runtime: &A
       .unwrap_or_else(|_| "standard".to_string());
     if interface_mode != current_interface_mode {
       if let Some(window) = app.get_webview_window("main") {
+        set_panel_resize_mode(runtime, interface_mode);
         let target = runtime.paste_target.lock().ok().and_then(|value| value.clone());
         // Resize the live WebView before compressing a large history store so mode changes feel immediate.
         let previous_size = window.inner_size().ok();
@@ -1773,6 +1780,7 @@ fn show_panel(app: &AppHandle, runtime: &AppRuntime) -> anyhow::Result<()> {
     .lock()
     .map(|store| store.state.settings.interface_mode.clone())
     .unwrap_or_else(|_| "standard".to_string());
+  set_panel_resize_mode(runtime, &interface_mode);
   let preferred_size = runtime.panel_sizes.lock().ok().and_then(|sizes| sizes.get(&interface_mode).copied());
   configure_panel_window(&window, target.as_deref(), &interface_mode, preferred_size)?;
   window.show()?;
@@ -1880,6 +1888,13 @@ fn remember_panel_size(runtime: &AppRuntime, mode: &str, size: PhysicalSize<u32>
   if size.width == 0 || size.height == 0 { return; }
   if let Ok(mut sizes) = runtime.panel_sizes.lock() {
     sizes.insert(mode.to_string(), size);
+  }
+}
+
+/// Updates the mode used by resize events, including while settings persistence is pending.
+fn set_panel_resize_mode(runtime: &AppRuntime, mode: &str) {
+  if let Ok(mut current) = runtime.panel_resize_mode.lock() {
+    *current = mode.to_string();
   }
 }
 
