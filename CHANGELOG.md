@@ -6,6 +6,20 @@ This project follows semantic versioning. Breaking changes should be reserved fo
 
 ## Unreleased
 
+## [2.3.7] - 2026-09-24
+
+### 修复
+
+- 修复窄窗口下历史文本被截断但不显示省略号的问题。
+- 为历史卡片、图片布局和预览区域补充宽度约束，避免内容溢出和布局挤压。
+- 标准模式和简略模式分别保存用户手动调整的窗口尺寸，切换布局时恢复对应尺寸。
+
+### 验证
+
+- 通过 `pnpm typecheck`、`pnpm build` 和 `pnpm test`。
+- 通过窄窗口、多主题和不同布局的渲染审计。
+- Windows 原生测试和安装包构建由 GitHub Actions 在 Windows runner 上执行。
+
 ## [2.3.6] - 2026-09-15
 
 ### Fixed

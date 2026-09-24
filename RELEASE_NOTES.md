@@ -1,47 +1,28 @@
-# LightClip v2.3.6
+# LightClip v2.3.7
 
-This maintenance release fixes narrow-window truncation and preserves user-resized panel dimensions when switching layouts. It also makes pin actions immediate and durable. Existing history and settings remain compatible.
+本次维护版本修复窄窗口下历史内容显示不完整的问题，并分别保存标准模式和简略模式的手动窗口尺寸。现有历史数据和设置保持兼容。
 
-## Pin Responsiveness
+## 本次更新
 
-- Pin and unpin now write only lightweight metadata instead of recompressing the full history.
-- The history list updates immediately after native confirmation, with pin state restored after restart.
+- 修复窄窗口下历史文本被截断但不显示省略号的问题。
+- 为历史卡片补充完整的宽度约束，避免图片、文本和操作区域在窄窗口中互相挤压。
+- 标准模式和简略模式分别记住用户手动调整的窗口尺寸。
+- 切换布局时会在当前显示器工作区内恢复对应模式的尺寸，避免被默认尺寸覆盖。
+- 保留此前轻量固定、搜索清除按钮和自动粘贴稳定性修复。
 
-## Layout And Overflow
+## 验证情况
 
-- Hides Chromium's native search clear control so the search field shows one consistent clear button.
-- Uses reliable single-line ellipsis for history titles instead of clipping long content at narrow widths.
-- Remembers separate manual window sizes for standard and compact modes, constraining restored sizes to the active monitor work area.
+- 已通过 `pnpm typecheck`、`pnpm build` 和 `pnpm test`。
+- 已通过窄窗口、多主题和不同布局的渲染审计。
+- Windows 原生测试和打包流程由 GitHub Actions 在 Windows runner 上执行。
 
-## Automatic Paste
+## 已知限制
 
-- Waits for selection keys to be released and the original input control to regain stable focus before submitting Ctrl+V.
-- Removes cross-process input-queue attachment and forced control focus, which could cause stalls or interfere with modifier state.
-- Rejects overlapping selections and stops pending paste when the target becomes invalid, focus is lost or the clipboard changes.
-- Waits for the panel to finish hiding and preserves normal/maximized target-window bounds.
-- Submits paste at most once; partial input delivery is not retried.
+自动粘贴仍受目标程序权限、特殊编辑器、输入法和 Windows 跨权限窗口限制。提交 Ctrl+V 不代表所有编辑器都一定接受内容。
 
-## Performance And Storage
+## 下载
 
-- Saves copy counts, timestamps and pin state in `lightclip-usage.json` instead of recompressing all text and image history for every selection or pin change.
-- The sidecar contains record IDs and small metadata only, not copied text, images or file paths. Startup replays newer metadata and full store saves fold it back into the main history file.
-- Adds stage timing and failure diagnostics without logging clipboard contents.
-- When backing up a live storage directory, include the sidecar to preserve the latest usage counts. Older versions ignore it, so downgrading may lose recent counters but not clipboard content.
+- 推荐下载 Windows x64 `setup.exe` 安装包，也可以使用独立便携版。
+- `latest.json` 和 `.sig` 是在线更新元数据，不是安装程序。
 
-## Verification And Limitations
-
-The validated fix passed 15 frontend tests and 34 Windows native tests. Usage tests include 936 synthetic entries, unchanged compressed history after repeated selections, reload recovery and save-failure rollback.
-
-A GitHub-built Windows package passed 12 consecutive pastes between two input controls, including held-Shift attempts and unchanged window bounds. Ordinary selection-to-insertion latency was 53-69 ms in that runner test; held-Shift cases completed in 183-196 ms including a deliberate 150 ms hold. Tagged packaging repeats the CI gate, packaged paste smoke and visible-installer handoff probe before publication.
-
-These measurements are not a universal performance or compatibility guarantee. The user's real clipboard history, every editor, elevated applications and every multi-monitor/IME configuration have not been certified. Large-image decoding, file clipboard helpers and concurrent capture/import/maintenance writes can still add latency. Windows privilege boundaries remain unchanged. A submitted Ctrl+V is not proof that every editor accepted the content.
-
-See [Automatic Paste Reliability](https://github.com/leaf-zly/lightclip/blob/v2.3.6/docs/PASTE-RELIABILITY.md) for the transaction and persistence contracts.
-
-## Downloads
-
-- Use the Windows x64 `setup.exe` asset for installation, or check for updates inside LightClip.
-- The portable executable is available separately.
-- `latest.json` and `.sig` files are updater metadata, not installers. Updater signatures are not Windows Authenticode code signing; unsigned Windows binaries may still trigger antivirus or SmartScreen warnings.
-
-[Download LightClip v2.3.6](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.6)
+[发布页面](https://github.com/leaf-zly/lightclip/releases/tag/v2.3.7)
